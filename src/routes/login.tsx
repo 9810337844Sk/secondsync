@@ -147,6 +147,7 @@ function LoginForm() {
 function SignupForm({ onSuccess }: { onSuccess: () => void }) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -156,6 +157,15 @@ function SignupForm({ onSuccess }: { onSuccess: () => void }) {
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!phone.trim()) {
+      setError("Mobile phone is required.");
+      return;
+    }
+    const phoneValue = phone.trim();
+    if (!/^\+?[0-9\s\-()]{7,20}$/.test(phoneValue)) {
+      setError("Enter a valid phone number.");
+      return;
+    }
     if (password.length < 6) {
       setError("Password must be at least 6 characters.");
       return;
@@ -164,7 +174,7 @@ function SignupForm({ onSuccess }: { onSuccess: () => void }) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: { data: { full_name: fullName, phone: phoneValue } },
     });
     setLoading(false);
     if (error) {
@@ -177,6 +187,7 @@ function SignupForm({ onSuccess }: { onSuccess: () => void }) {
         id: data.user.id,
         email,
         full_name: fullName,
+        phone: phoneValue,
         is_banned: false,
         is_admin: false,
       });
@@ -218,6 +229,15 @@ function SignupForm({ onSuccess }: { onSuccess: () => void }) {
         value={email}
         onChange={setEmail}
         placeholder="you@example.com"
+        required
+      />
+      <InputField
+        label="Mobile phone"
+        type="tel"
+        inputMode="tel"
+        value={phone}
+        onChange={setPhone}
+        placeholder="+977 98xxxxxxxx"
         required
       />
       <div>

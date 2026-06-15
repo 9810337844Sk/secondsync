@@ -150,7 +150,7 @@ function Index() {
       {/* ─── HERO ─────────────────────────────────────────────────────── */}
       <section
         className="relative overflow-hidden"
-        style={{ background: "linear-gradient(135deg, #3d0010 0%, #5c0018 50%, #7a1228 100%)", minHeight: "92vh" }}
+        style={{ background: "linear-gradient(135deg, #3d0010 0%, #5c0018 50%, #7a1228 100%)", minHeight: "100vh" }}
       >
         {/* Subtle pattern */}
         <div
@@ -166,7 +166,7 @@ function Index() {
           style={{ background: "radial-gradient(circle, #d4a857 0%, transparent 65%)", filter: "blur(80px)" }} />
 
         {/* ── Desktop layout ── */}
-        <div className="relative hidden min-h-[92vh] lg:grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <div className="relative hidden min-h-[100vh] lg:grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
 
           {/* LEFT — text */}
           <div className="flex flex-col justify-center px-12 py-16 xl:px-20">
@@ -241,11 +241,10 @@ function Index() {
             </div>
 
             <img
-              src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgUsTPgdX5-oGS7IWTuMUhBX9gF9ZFVVXXYX7YCAaYCHmy-xrpLY5nsLuRaX8Vq5AzGLMoh6Uw2ffSp6UEcbuCACxvIeuBtpewKuYAhxCqvf2iAQ2ojZJjFwqeWwU7aC6S8nx-8LJlhX1AdDxgnsaMyYp7ItZUsObTfHU7ckQscTV6Mw3uf8vwyJUKeHWg/s1600/mega-love.png"
+              src={hero}
               alt="Second Sync shopping"
-              className="relative z-10 h-full w-full object-contain object-bottom"
+              className="relative z-10 h-full w-full object-cover object-bottom"
               style={{
-                maxHeight: "88vh",
                 filter: "drop-shadow(-8px 0 40px rgba(60,0,12,0.9)) drop-shadow(0 -4px 30px rgba(212,168,87,0.2))",
                 animation: "bob 5s ease-in-out infinite",
               }}
@@ -283,9 +282,9 @@ function Index() {
             </div>
           </div>
           <img
-            src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgUsTPgdX5-oGS7IWTuMUhBX9gF9ZFVVXXYX7YCAaYCHmy-xrpLY5nsLuRaX8Vq5AzGLMoh6Uw2ffSp6UEcbuCACxvIeuBtpewKuYAhxCqvf2iAQ2ojZJjFwqeWwU7aC6S8nx-8LJlhX1AdDxgnsaMyYp7ItZUsObTfHU7ckQscTV6Mw3uf8vwyJUKeHWg/s1600/mega-love.png"
+            src={hero}
             alt="Second Sync"
-            className="mt-6 w-3/4 max-w-xs"
+            className="mt-6 h-[320px] w-full max-w-none rounded-3xl object-cover"
             style={{ filter: "drop-shadow(0 10px 30px rgba(0,0,0,0.5))", animation: "bob 5s ease-in-out infinite" }}
           />
         </div>
