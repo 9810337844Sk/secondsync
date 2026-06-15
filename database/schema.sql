@@ -185,7 +185,7 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, email, full_name, is_banned, is_admin)
+  insert into public.profiles (id, email, full_name, phone, is_banned, is_admin)
   values (
     new.id,
     new.email,
@@ -193,6 +193,7 @@ begin
       new.raw_user_meta_data->>'full_name',
       split_part(new.email, '@', 1)
     ),
+    new.raw_user_meta_data->>'phone',
     false,
     false
   )
