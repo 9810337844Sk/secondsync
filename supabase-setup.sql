@@ -1,0 +1,3 @@
+-- This file has been moved to database/schema.sql
+-- Run database/schema.sql in the Supabase SQL Editor instead.
+-- https://supabase.com/dashboard/project/swxrdjijzvzsrqrrvbdr/sql/new
