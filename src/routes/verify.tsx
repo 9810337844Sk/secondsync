@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
-import { CheckCircle2, Mail, RefreshCw, ArrowRight } from "lucide-react";
+import { CheckCircle2, Mail, RefreshCw, ArrowRight, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { sendVerificationEmail } from "@/lib/send-verification";
 import pattern from "@/assets/pattern.jpg";
@@ -26,6 +26,7 @@ function VerifyPage() {
   const [resent, setResent] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [verified, setVerified] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
 
   const refs = [
     useRef<HTMLInputElement>(null),
@@ -88,6 +89,23 @@ function VerifyPage() {
       return;
     }
 
+    // Try auto-login with stored credentials
+    const storedPassword = sessionStorage.getItem("ss_pending_pw");
+    if (storedPassword) {
+      setSigningIn(true);
+      const { error: loginErr } = await supabase.auth.signInWithPassword({
+        email,
+        password: storedPassword,
+      });
+      sessionStorage.removeItem("ss_pending_pw");
+      setSigningIn(false);
+      if (!loginErr) {
+        navigate({ to: "/" });
+        return;
+      }
+    }
+
+    // Fallback: show success state and let user sign in manually
     setVerified(true);
   }
 
@@ -128,7 +146,12 @@ function VerifyPage() {
 
       <div className="w-full max-w-md">
         <div className="rounded-3xl border border-border bg-card p-8 shadow-elegant">
-          {verified ? (
+          {signingIn ? (
+            <div className="flex flex-col items-center gap-4 py-8 text-center">
+              <Loader2 className="h-10 w-10 animate-spin text-crimson" />
+              <p className="text-sm font-medium text-ink">Signing you in…</p>
+            </div>
+          ) : verified ? (
             <div className="flex flex-col items-center gap-4 py-4 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
                 <CheckCircle2 className="h-9 w-9 text-green-600" />

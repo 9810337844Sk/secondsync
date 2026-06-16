@@ -15,5 +15,6 @@ export type UserProfile = {
   location: string | null;
   is_banned: boolean;
   is_admin: boolean;
+  is_verified: boolean;
   created_at: string;
 };

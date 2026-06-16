@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Eye, EyeOff, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
@@ -18,14 +18,18 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<"login" | "signup">("login");
 
-  if (user) {
-    navigate({ to: "/" });
-    return null;
-  }
+  useEffect(() => {
+    if (!loading && user) {
+      navigate({ to: "/" });
+    }
+  }, [user, loading, navigate]);
+
+  // Show nothing while auth is resolving or redirecting
+  if (loading || user) return null;
 
   return (
     <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
@@ -98,20 +102,36 @@ function LoginForm() {
 
     if (signInErr) {
       setLoading(false);
+      console.error("Supabase signIn error:", signInErr);
       const msg = (signInErr.message ?? "").toLowerCase();
+      const name = (signInErr.name ?? "").toLowerCase();
+
+      // Supabase 500 / retryable fetch error — auth record broken or server issue
+      if (name.includes("retryable") || name.includes("fetch") || msg === "" || typeof signInErr.message === "object") {
+        setError("Account setup is incomplete. Please register again or contact support.");
+        return;
+      }
       // Supabase says email not confirmed — send our own OTP and redirect to verify
       if (msg.includes("not confirmed") || msg.includes("email not confirmed")) {
         try { await sendVerificationEmail({ data: { email } }); } catch {}
+        sessionStorage.setItem("ss_pending_pw", password);
         navigate({ to: "/verify", search: { email } });
         return;
       }
       // Wrong email/password
-      if (msg.includes("invalid login credentials") || msg.includes("invalid email") || msg.includes("invalid password")) {
+      if (
+        msg.includes("invalid login credentials") ||
+        msg.includes("invalid email") ||
+        msg.includes("invalid password") ||
+        msg.includes("email not found") ||
+        msg.includes("wrong password") ||
+        msg === ""
+      ) {
         setError("Wrong email or password. Please try again.");
         return;
       }
-      // Show actual Supabase error for anything else (helps diagnose unknown errors)
-      setError(signInErr.message || "Login failed. Please try again.");
+      // Show actual Supabase error for anything else
+      setError(typeof signInErr.message === "string" && signInErr.message ? signInErr.message : "Login failed. Please try again.");
       return;
     }
 
@@ -127,6 +147,7 @@ function LoginForm() {
         await supabase.auth.signOut();
         setLoading(false);
         try { await sendVerificationEmail({ data: { email } }); } catch {}
+        sessionStorage.setItem("ss_pending_pw", password);
         navigate({ to: "/verify", search: { email } });
         return;
       }
@@ -167,7 +188,7 @@ function LoginForm() {
         </div>
       </div>
 
-      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{typeof error === "string" ? error : "Login failed. Please try again."}</p>}
 
       <button
         type="submit"
@@ -214,6 +235,7 @@ function SignupForm({ onSuccess }: { onSuccess: () => void }) {
       return;
     }
 
+    sessionStorage.setItem("ss_pending_pw", password);
     navigate({ to: "/verify", search: { email } });
   }
 
@@ -247,7 +269,7 @@ function SignupForm({ onSuccess }: { onSuccess: () => void }) {
         ))}
       </div>
 
-      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{typeof error === "string" ? error : "Something went wrong. Please try again."}</p>}
 
       <button
         type="submit"

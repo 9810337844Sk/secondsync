@@ -1,6 +1,11 @@
 # Lovable platform (not needed)
 .lovable/
 
+# Environment variables — never commit secrets
+.env
+.env.*
+!.env.example
+
 # Logs
 logs
 *.log
@@ -33,3 +38,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.vercel

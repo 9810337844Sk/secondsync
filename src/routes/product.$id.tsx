@@ -24,19 +24,49 @@ function ProductPage() {
   const [notFound, setNotFound]     = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [actionError, setActionError]     = useState("");
 
   async function handleMarkSold() {
     if (!product) return;
     setActionLoading(true);
-    await supabase.from("listings").update({ is_sold: !product.is_sold }).eq("id", product.id);
-    setProduct({ ...product, is_sold: !product.is_sold });
+    setActionError("");
+    const { error } = await supabase
+      .from("listings")
+      .update({ is_sold: !product.is_sold })
+      .eq("id", product.id)
+      .eq("seller_id", user!.id);
+    if (error) {
+      setActionError("Could not update listing. Please try again.");
+    } else {
+      setProduct({ ...product, is_sold: !product.is_sold });
+    }
     setActionLoading(false);
   }
 
   async function handleRemove() {
     if (!product) return;
     setActionLoading(true);
-    await supabase.from("listings").update({ is_active: false }).eq("id", product.id);
+    setActionError("");
+    const { error, count } = await supabase
+      .from("listings")
+      .update({ is_active: false })
+      .eq("id", product.id)
+      .eq("seller_id", user!.id)
+      .select("id", { count: "exact", head: true });
+
+    if (error || count === 0) {
+      // Fallback: try hard delete
+      const { error: delError } = await supabase
+        .from("listings")
+        .delete()
+        .eq("id", product.id)
+        .eq("seller_id", user!.id);
+      if (delError) {
+        setActionError("Could not remove listing. Please try again.");
+        setActionLoading(false);
+        return;
+      }
+    }
     setActionLoading(false);
     navigate({ to: "/browse" });
   }
@@ -251,24 +281,27 @@ function ProductPage() {
 
                 {!confirmRemove ? (
                   <button
-                    onClick={() => setConfirmRemove(true)}
+                    onClick={() => { setConfirmRemove(true); setActionError(""); }}
                     className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-600 transition-all hover:bg-red-100"
                   >
                     <Trash2 className="h-4 w-4" /> Remove Listing
                   </button>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm text-red-600 font-medium">Remove permanently?</span>
                     <button
                       onClick={handleRemove}
                       disabled={actionLoading}
-                      className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                     >
-                      Yes, remove
+                      {actionLoading ? (
+                        <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" /> Removing…</>
+                      ) : "Yes, remove"}
                     </button>
                     <button
-                      onClick={() => setConfirmRemove(false)}
-                      className="rounded-full border border-border px-4 py-2 text-sm font-semibold text-ink hover:bg-secondary"
+                      onClick={() => { setConfirmRemove(false); setActionError(""); }}
+                      disabled={actionLoading}
+                      className="rounded-full border border-border px-4 py-2 text-sm font-semibold text-ink hover:bg-secondary disabled:opacity-50"
                     >
                       Cancel
                     </button>
@@ -276,7 +309,13 @@ function ProductPage() {
                 )}
               </div>
 
-              {product.is_sold && (
+              {actionError && (
+                <p className="mt-3 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-600">
+                  {actionError}
+                </p>
+              )}
+
+              {product.is_sold && !actionError && (
                 <p className="mt-3 flex items-center gap-1.5 text-xs text-green-700">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   This listing is marked as sold and is no longer accepting buyers.
