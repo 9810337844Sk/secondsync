@@ -17,15 +17,25 @@ export function ProductCard({ p, compact }: { p: Product; compact?: boolean }) {
           src={cover}
           alt={p.title}
           loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+          className={`h-full w-full object-cover transition-transform duration-700 group-hover:scale-105 ${p.is_sold ? "brightness-50" : ""}`}
         />
-        <span className="absolute left-3 top-3 rounded-full bg-paper/95 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-ink">
-          {p.condition}
-        </span>
-        {p.original_price && (
-          <span className="absolute right-3 top-3 rounded-full bg-crimson px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-paper">
-            -{Math.round((1 - p.price / p.original_price) * 100)}%
-          </span>
+        {p.is_sold ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="rotate-[-15deg] rounded-xl border-4 border-red-500 px-4 py-1 text-xl font-black uppercase tracking-widest text-red-500 opacity-90">
+              SOLD
+            </span>
+          </div>
+        ) : (
+          <>
+            <span className="absolute left-3 top-3 rounded-full bg-paper/95 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-ink">
+              {p.condition}
+            </span>
+            {p.original_price && (
+              <span className="absolute right-3 top-3 rounded-full bg-crimson px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-paper">
+                -{Math.round((1 - p.price / p.original_price) * 100)}%
+              </span>
+            )}
+          </>
         )}
       </div>
 

@@ -3,6 +3,8 @@ import { useState } from "react";
 import { Eye, EyeOff, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { sendVerificationEmail } from "@/lib/send-verification";
+import { registerUser } from "@/lib/register-user";
 import pattern from "@/assets/pattern.jpg";
 
 export const Route = createFileRoute("/login")({
@@ -91,13 +93,47 @@ function LoginForm() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) {
-      setError(error.message);
-    } else {
-      navigate({ to: "/" });
+
+    const { data, error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (signInErr) {
+      setLoading(false);
+      const msg = (signInErr.message ?? "").toLowerCase();
+      // Supabase says email not confirmed — send our own OTP and redirect to verify
+      if (msg.includes("not confirmed") || msg.includes("email not confirmed")) {
+        try { await sendVerificationEmail({ data: { email } }); } catch {}
+        navigate({ to: "/verify", search: { email } });
+        return;
+      }
+      // Wrong email/password
+      if (msg.includes("invalid login credentials") || msg.includes("invalid email") || msg.includes("invalid password")) {
+        setError("Wrong email or password. Please try again.");
+        return;
+      }
+      // Show actual Supabase error for anything else (helps diagnose unknown errors)
+      setError(signInErr.message || "Login failed. Please try again.");
+      return;
     }
+
+    // Login succeeded — check our own is_verified flag
+    if (data.user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_verified")
+        .eq("id", data.user.id)
+        .single();
+
+      if (profile && !profile.is_verified) {
+        await supabase.auth.signOut();
+        setLoading(false);
+        try { await sendVerificationEmail({ data: { email } }); } catch {}
+        navigate({ to: "/verify", search: { email } });
+        return;
+      }
+    }
+
+    setLoading(false);
+    navigate({ to: "/" });
   }
 
   return (
@@ -145,6 +181,7 @@ function LoginForm() {
 }
 
 function SignupForm({ onSuccess }: { onSuccess: () => void }) {
+  const navigate = useNavigate();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -152,94 +189,39 @@ function SignupForm({ onSuccess }: { onSuccess: () => void }) {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [done, setDone] = useState(false);
-
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (!phone.trim()) {
-      setError("Mobile phone is required.");
-      return;
-    }
+    if (!phone.trim()) { setError("Mobile phone is required."); return; }
     const phoneValue = phone.trim();
-    if (!/^\+?[0-9\s\-()]{7,20}$/.test(phoneValue)) {
-      setError("Enter a valid phone number.");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
-    setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName, phone: phoneValue } },
-    });
-    setLoading(false);
-    if (error) {
-      setError(error.message);
-      return;
-    }
-    // Insert profile row
-    if (data.user) {
-      await supabase.from("profiles").upsert({
-        id: data.user.id,
-        email,
-        full_name: fullName,
-        phone: phoneValue,
-        is_banned: false,
-        is_admin: false,
-      });
-    }
-    setDone(true);
-  }
+    if (!/^\+?[0-9\s\-()]{7,20}$/.test(phoneValue)) { setError("Enter a valid phone number."); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
 
-  if (done) {
-    return (
-      <div className="flex flex-col items-center gap-4 text-center py-4">
-        <CheckCircle2 className="h-14 w-14 text-crimson" />
-        <h2 className="font-display text-2xl font-bold text-ink">Account created!</h2>
-        <p className="text-sm text-muted-foreground">
-          Check your email to confirm your account, then sign in.
-        </p>
-        <button
-          onClick={onSuccess}
-          className="mt-2 rounded-full bg-crimson px-6 py-3 text-sm font-semibold text-paper"
-        >
-          Go to Sign In
-        </button>
-      </div>
-    );
+    setLoading(true);
+
+    let result: { ok: boolean; error?: string } = { ok: false };
+    try {
+      result = await registerUser({ data: { email, password, full_name: fullName, phone: phoneValue } });
+    } catch {
+      setLoading(false);
+      setError("Something went wrong. Please try again.");
+      return;
+    }
+
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error || "Something went wrong. Please try again.");
+      return;
+    }
+
+    navigate({ to: "/verify", search: { email } });
   }
 
   return (
     <form onSubmit={handleSignup} className="flex flex-col gap-4">
-      <InputField
-        label="Full name"
-        type="text"
-        value={fullName}
-        onChange={setFullName}
-        placeholder="Hari Bahadur Thapa"
-        required
-      />
-      <InputField
-        label="Email address"
-        type="email"
-        value={email}
-        onChange={setEmail}
-        placeholder="you@example.com"
-        required
-      />
-      <InputField
-        label="Mobile phone"
-        type="tel"
-        inputMode="tel"
-        value={phone}
-        onChange={setPhone}
-        placeholder="+977 98xxxxxxxx"
-        required
-      />
+      <InputField label="Full name" type="text" value={fullName} onChange={setFullName} placeholder="Hari Bahadur Thapa" required />
+      <InputField label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@example.com" required />
+      <InputField label="Mobile phone" type="tel" inputMode="tel" value={phone} onChange={setPhone} placeholder="+977 98xxxxxxxx" required />
       <div>
         <label className="text-sm font-semibold text-ink">Password</label>
         <div className="relative mt-2">
@@ -251,17 +233,12 @@ function SignupForm({ onSuccess }: { onSuccess: () => void }) {
             required
             className="w-full rounded-xl border border-border bg-paper px-4 py-3 pr-11 text-sm outline-none focus:border-crimson"
           />
-          <button
-            type="button"
-            onClick={() => setShow(!show)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-ink"
-          >
+          <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-ink">
             {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
         </div>
       </div>
 
-      {/* Perks */}
       <div className="flex flex-col gap-1.5 rounded-xl bg-secondary/60 px-4 py-3">
         {["Free to list forever", "eSewa & Khalti payouts", "Verified buyer protection"].map((p) => (
           <div key={p} className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -283,9 +260,7 @@ function SignupForm({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-function InputField({
-  label, value, onChange, ...rest
-}: { label: string; value: string; onChange: (v: string) => void; [k: string]: any }) {
+function InputField({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (v: string) => void; [k: string]: any }) {
   return (
     <div>
       <label className="text-sm font-semibold text-ink">{label}</label>

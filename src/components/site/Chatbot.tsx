@@ -2,7 +2,7 @@ import { MessageCircle, Send, X, Sparkles, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 // ─── Groq config ───────────────────────────────────────────────────────────
-const GROQ_API_KEY = "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";
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY ?? "";
 const GROQ_MODEL   = "qwen/qwen3-32b";
 const GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions";
 

@@ -1,9 +1,10 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ArrowLeft, MapPin, Phone, Shield, Truck, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, MapPin, Phone, Shield, Truck, Clock, ChevronLeft, ChevronRight, CheckCircle2, Trash2, Tag } from "lucide-react";
 import { formatNpr, timeAgo, type Product } from "@/lib/products";
 import { ProductCard } from "@/components/site/ProductCard";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/product/$id")({
   head: () => ({
@@ -14,11 +15,31 @@ export const Route = createFileRoute("/product/$id")({
 
 function ProductPage() {
   const { id } = useParams({ from: "/product/$id" });
-  const [product, setProduct]   = useState<Product | null>(null);
-  const [related, setRelated]   = useState<Product[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [imgIdx, setImgIdx]     = useState(0);
-  const [notFound, setNotFound] = useState(false);
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [product, setProduct]       = useState<Product | null>(null);
+  const [related, setRelated]       = useState<Product[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [imgIdx, setImgIdx]         = useState(0);
+  const [notFound, setNotFound]     = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+
+  async function handleMarkSold() {
+    if (!product) return;
+    setActionLoading(true);
+    await supabase.from("listings").update({ is_sold: !product.is_sold }).eq("id", product.id);
+    setProduct({ ...product, is_sold: !product.is_sold });
+    setActionLoading(false);
+  }
+
+  async function handleRemove() {
+    if (!product) return;
+    setActionLoading(true);
+    await supabase.from("listings").update({ is_active: false }).eq("id", product.id);
+    setActionLoading(false);
+    navigate({ to: "/browse" });
+  }
 
   useEffect(() => {
     async function load() {
@@ -86,8 +107,15 @@ function ProductPage() {
             <img
               src={cover}
               alt={product.title}
-              className="h-full w-full object-cover"
+              className={`h-full w-full object-cover ${product.is_sold ? "brightness-50" : ""}`}
             />
+            {product.is_sold && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="rotate-[-15deg] rounded-2xl border-[6px] border-red-500 px-6 py-2 text-4xl font-black uppercase tracking-widest text-red-500 opacity-90">
+                  SOLD
+                </span>
+              </div>
+            )}
             {images.length > 1 && (
               <>
                 <button
@@ -200,6 +228,62 @@ function ProductPage() {
               <Truck className="h-4 w-4 text-crimson" /> Pathao delivery
             </div>
           </div>
+
+          {/* Seller management panel */}
+          {user?.id === product.seller_id && (
+            <div className="mt-6 rounded-2xl border-2 border-dashed border-border bg-secondary/40 p-5">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Manage your listing
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={handleMarkSold}
+                  disabled={actionLoading}
+                  className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-all hover:scale-105 disabled:opacity-50 ${
+                    product.is_sold
+                      ? "bg-green-100 text-green-700 hover:bg-green-200"
+                      : "bg-ink text-paper hover:bg-ink/80"
+                  }`}
+                >
+                  <Tag className="h-4 w-4" />
+                  {product.is_sold ? "Mark as Available" : "Mark as Sold"}
+                </button>
+
+                {!confirmRemove ? (
+                  <button
+                    onClick={() => setConfirmRemove(true)}
+                    className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-600 transition-all hover:bg-red-100"
+                  >
+                    <Trash2 className="h-4 w-4" /> Remove Listing
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-red-600 font-medium">Remove permanently?</span>
+                    <button
+                      onClick={handleRemove}
+                      disabled={actionLoading}
+                      className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      Yes, remove
+                    </button>
+                    <button
+                      onClick={() => setConfirmRemove(false)}
+                      className="rounded-full border border-border px-4 py-2 text-sm font-semibold text-ink hover:bg-secondary"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {product.is_sold && (
+                <p className="mt-3 flex items-center gap-1.5 text-xs text-green-700">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  This listing is marked as sold and is no longer accepting buyers.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

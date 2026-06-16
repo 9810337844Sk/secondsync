@@ -16,6 +16,7 @@ export type Product = {
   seller_email?: string;
   posted_at: string;
   is_active: boolean;
+  is_sold: boolean;
 };
 
 export const categories = [

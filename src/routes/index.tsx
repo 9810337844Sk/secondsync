@@ -29,7 +29,7 @@ import {
   PhoneCall,
   MessageCircle,
 } from "lucide-react";
-import hero from "@/assets/hero.jpg";
+import hero from "@/assets/mega-love.png";
 import pattern from "@/assets/pattern.jpg";
 import { categories, type Product, timeAgo, formatNpr } from "@/lib/products";
 import { ProductCard } from "@/components/site/ProductCard";
