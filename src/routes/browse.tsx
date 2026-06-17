@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Search, SlidersHorizontal, RefreshCw, PackageOpen } from "lucide-react";
+import { Search, SlidersHorizontal, RefreshCw, PackageOpen, TrendingUp, Sparkles } from "lucide-react";
 import { categories, type Product } from "@/lib/products";
 import { ProductCard } from "@/components/site/ProductCard";
 import { supabase } from "@/lib/supabase";
+import { getPersonalizedRecommendations, getTrendingListings, getViewHistory } from "@/lib/recommendations";
 
 export const Route = createFileRoute("/browse")({
   head: () => ({
@@ -18,12 +19,16 @@ export const Route = createFileRoute("/browse")({
 const CONDITIONS = ["Like New", "Excellent", "Good", "Fair"];
 
 function Browse() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [cat, setCat]           = useState("all");
-  const [q, setQ]               = useState("");
-  const [condition, setCondition] = useState("all");
-  const [sort, setSort]         = useState<"newest" | "price_asc" | "price_desc">("newest");
+  const [products, setProducts]         = useState<Product[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [cat, setCat]                   = useState("all");
+  const [q, setQ]                       = useState("");
+  const [condition, setCondition]       = useState("all");
+  const [sort, setSort]                 = useState<"newest" | "price_asc" | "price_desc">("newest");
+  const [trending, setTrending]         = useState<Product[]>([]);
+  const [recommended, setRecommended]   = useState<Product[]>([]);
+  const hasHistory = getViewHistory().length > 0;
+  const isFiltered = cat !== "all" || condition !== "all" || q !== "";
 
   async function load() {
     setLoading(true);
@@ -55,6 +60,14 @@ function Browse() {
     const t = setTimeout(() => load(), 350);
     return () => clearTimeout(t);
   }, [q]);
+
+  // Load recommendations once on mount
+  useEffect(() => {
+    getTrendingListings(undefined, 8).then(setTrending);
+    if (hasHistory) {
+      getPersonalizedRecommendations("", 6).then(setRecommended);
+    }
+  }, []);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -154,6 +167,34 @@ function Browse() {
           >
             Post your item
           </Link>
+        </div>
+      )}
+
+      {/* ── Personalized Recommendations ── */}
+      {!isFiltered && recommended.length > 0 && (
+        <div className="mt-20">
+          <div className="flex items-center gap-2 mb-5">
+            <Sparkles className="h-5 w-5 text-gold" />
+            <h2 className="font-display text-2xl font-bold text-ink">Recommended for You</h2>
+            <span className="rounded-full bg-crimson/10 px-2.5 py-0.5 text-xs font-medium text-crimson">Based on your browsing</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {recommended.map(p => <ProductCard key={p.id} p={p} compact />)}
+          </div>
+        </div>
+      )}
+
+      {/* ── Trending Now ── */}
+      {!isFiltered && trending.length > 0 && (
+        <div className="mt-16">
+          <div className="flex items-center gap-2 mb-5">
+            <TrendingUp className="h-5 w-5 text-crimson" />
+            <h2 className="font-display text-2xl font-bold text-ink">Trending Now</h2>
+            <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Latest listings</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4">
+            {trending.slice(0, 4).map(p => <ProductCard key={p.id} p={p} compact />)}
+          </div>
         </div>
       )}
     </div>

@@ -3,13 +3,14 @@ import { useEffect, useState } from "react";
 import {
   ArrowLeft, MapPin, Clock, ChevronLeft, ChevronRight,
   CheckCircle2, Trash2, Tag, ShoppingBag, Package,
-  CreditCard, Loader2, Shield, Truck, Star, X,
-  BadgeCheck, AlertCircle,
+  CreditCard, Loader2, Shield, Truck, X,
+  BadgeCheck, AlertCircle, TrendingUp,
 } from "lucide-react";
 import { formatNpr, timeAgo, type Product } from "@/lib/products";
 import { ProductCard } from "@/components/site/ProductCard";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { recordView, getSimilarListings, getPersonalizedRecommendations } from "@/lib/recommendations";
 
 export const Route = createFileRoute("/product/$id")({
   head: () => ({ meta: [{ title: "Listing — Second Sync" }] }),
@@ -242,6 +243,8 @@ function ProductPage() {
 
   const [product, setProduct]             = useState<Product | null>(null);
   const [related, setRelated]             = useState<Product[]>([]);
+  const [similar, setSimilar]             = useState<Product[]>([]);
+  const [personalized, setPersonalized]   = useState<Product[]>([]);
   const [loading, setLoading]             = useState(true);
   const [imgIdx, setImgIdx]               = useState(0);
   const [notFound, setNotFound]           = useState(false);
@@ -281,11 +284,26 @@ function ProductPage() {
       const { data } = await supabase.from("listings").select("*")
         .eq("id", id).eq("is_active", true).single();
       if (!data) { setNotFound(true); setLoading(false); return; }
-      setProduct(data as Product);
+      const p = data as Product;
+      setProduct(p);
+
+      // Record this view for personalization
+      recordView(id);
+
+      // Fetch same-category related
       const { data: rel } = await supabase.from("listings").select("*")
-        .eq("category", (data as Product).category)
+        .eq("category", p.category)
         .eq("is_active", true).neq("id", id).limit(4);
       setRelated((rel as Product[]) ?? []);
+
+      // Fetch similar by price+category
+      const sim = await getSimilarListings(p, 4);
+      setSimilar(sim);
+
+      // Personalized from view history
+      const pers = await getPersonalizedRecommendations(id, 6);
+      setPersonalized(pers);
+
       setLoading(false);
     }
     load();
@@ -514,10 +532,37 @@ function ProductPage() {
       </div>
 
       {/* Related listings */}
-      {related.length > 0 && (
-        <div className="mt-20">
-          <h2 className="font-display text-2xl font-bold text-ink">You might also like</h2>
-          <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Recommendation sections */}
+      {similar.length > 0 && (
+        <div className="mt-16">
+          <div className="flex items-center gap-2 mb-5">
+            <TrendingUp className="h-5 w-5 text-crimson" />
+            <h2 className="font-display text-2xl font-bold text-ink">Similar Items</h2>
+            <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground capitalize">{product.category}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {similar.map(r => <ProductCard key={r.id} p={r} />)}
+          </div>
+        </div>
+      )}
+
+      {personalized.length > 0 && (
+        <div className="mt-16">
+          <div className="flex items-center gap-2 mb-5">
+            <span className="text-xl">✨</span>
+            <h2 className="font-display text-2xl font-bold text-ink">Recommended for You</h2>
+            <span className="rounded-full bg-crimson/10 px-2.5 py-0.5 text-xs font-medium text-crimson">Based on your browsing</span>
+          </div>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {personalized.map(r => <ProductCard key={r.id} p={r} />)}
+          </div>
+        </div>
+      )}
+
+      {related.length > 0 && similar.length === 0 && personalized.length === 0 && (
+        <div className="mt-16">
+          <h2 className="font-display text-2xl font-bold text-ink mb-5">You might also like</h2>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {related.map(r => <ProductCard key={r.id} p={r} />)}
           </div>
         </div>

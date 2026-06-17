@@ -5,6 +5,7 @@ import { categories, CONDITIONS } from "@/lib/products";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { uploadToCloudinary } from "@/lib/cloudinary";
+import { DamageAnalyzer } from "@/components/site/DamageAnalyzer";
 
 export const Route = createFileRoute("/sell")({
   head: () => ({
@@ -361,6 +362,15 @@ function SellForm() {
                       Cover
                     </span>
                   )}
+                  {/* Damage analyser on cover image */}
+                  {i === 0 && (
+                    <div className="absolute -bottom-1 left-0 right-0 flex justify-center">
+                      <DamageAnalyzer
+                        imageFile={imageFiles[0]}
+                        onConditionSuggested={(c) => setCondition(c)}
+                      />
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => removeImage(i)}
@@ -380,6 +390,19 @@ function SellForm() {
                   <span className="text-[10px]">Add more</span>
                 </button>
               )}
+            </div>
+          )}
+
+          {/* ── AI Damage Analyzer ── */}
+          {imageFiles.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                🤖 AI Damage Detection
+              </p>
+              <DamageAnalyzer
+                imageFile={imageFiles[0]}
+                onConditionSuggested={(c) => setCondition(c)}
+              />
             </div>
           )}
 
