@@ -123,7 +123,14 @@ export function Header() {
                       </Link>
                     )}
                     <Link
-                      to="/sell"
+                      to="/dashboard"
+                      onClick={() => setDropOpen(false)}
+                      className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm text-ink hover:bg-secondary"
+                    >
+                      <User className="h-4 w-4" /> My Dashboard
+                    </Link>
+                    <Link
+                      to="/my-listings"
                       onClick={() => setDropOpen(false)}
                       className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm text-ink hover:bg-secondary"
                     >

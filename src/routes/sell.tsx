@@ -233,15 +233,21 @@ function SellForm() {
           />
         </Field>
 
-        {/* Title in Nepali */}
+        {/* Title in Nepali — uses Google Input Tools via lang attribute */}
         <Field label="Title in Nepali (optional)">
           <input
             value={titleNp}
             onChange={(e) => setTitleNp(e.target.value)}
             placeholder="नेपालीमा शीर्षक"
+            lang="ne"
             className={inputCls}
-            style={{ fontFamily: '"Tiro Devanagari Sanskrit", serif' }}
+            style={{ fontFamily: '"Tiro Devanagari Sanskrit", serif', imeMode: "active" } as React.CSSProperties}
+            onCompositionUpdate={(e) => setTitleNp((e.target as HTMLInputElement).value)}
           />
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            💡 Windows: <kbd className="rounded border border-border px-1 py-0.5 font-mono text-[10px]">Win + Space</kbd> to switch to Nepali keyboard &nbsp;·&nbsp;
+            Chrome: install <a href="https://chrome.google.com/webstore/detail/google-input-tools/mclkkofklkfljcocdinagocijmpgbhab" target="_blank" rel="noopener noreferrer" className="text-crimson underline">Google Input Tools</a>
+          </p>
         </Field>
 
         {/* Category */}
