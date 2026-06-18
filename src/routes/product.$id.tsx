@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { recordView, getSimilarListings, getPersonalizedRecommendations } from "@/lib/recommendations";
 import { DamageAnalyzer } from "@/components/site/DamageAnalyzer";
-import { esewaSign, khaltiInitiate } from "@/lib/payment.server";
+import { esewaSign } from "@/lib/payment.server";
 
 export const Route = createFileRoute("/product/$id")({
   head: () => ({ meta: [{ title: "Listing — Second Sync" }] }),
@@ -76,7 +76,7 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
   const [buyerPhone, setBuyerPhone] = useState(profile?.phone ?? "");
   const [address, setAddress]     = useState("");
   const [delivery, setDelivery]   = useState<"pickup" | "pathao" | "bus">("pickup");
-  const [payment, setPayment]     = useState<"cash" | "esewa" | "khalti">("cash");
+  const [payment, setPayment]     = useState<"cash" | "esewa">("cash");
   const [note, setNote]           = useState("");
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState("");
@@ -203,26 +203,6 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
       return;
     }
 
-    // ── Khalti: initiate → redirect to hosted checkout ──────────
-    if (payment === "khalti") {
-      try {
-        const origin = window.location.origin;
-        const { paymentUrl } = await khaltiInitiate({
-          data: {
-            orderId,
-            orderName:  product.title,
-            amountNpr:  total,
-            returnUrl:  `${origin}/payment-success?gateway=khalti&order_id=${orderId}`,
-            websiteUrl: origin,
-          },
-        });
-        window.location.href = paymentUrl; // navigates away
-      } catch (err: any) {
-        setLoading(false);
-        setError("Could not initiate Khalti payment. Please try again.");
-      }
-      return;
-    }
   }
 
   /* ── Success state ── */
@@ -324,23 +304,29 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         {/* Payment */}
         <div>
           <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Payment Method</p>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {([
-              { id: "cash",   label: "Cash on Meet", icon: "💵" },
-              { id: "esewa",  label: "eSewa",         icon: "🟢" },
-              { id: "khalti", label: "Khalti",        icon: "🟣" },
+              { id: "cash",  label: "Cash on Meet", icon: "💵", sub: "Pay when you meet" },
+              { id: "esewa", label: "eSewa",         icon: "🟢", sub: "Secure online payment" },
             ] as const).map(opt => (
               <button key={opt.id} type="button" onClick={() => setPayment(opt.id)}
-                className={`flex flex-col items-center rounded-xl border p-2.5 text-center text-xs transition-all ${
+                className={`flex flex-col items-center rounded-xl border p-3 text-center text-xs transition-all ${
                   payment === opt.id
                     ? "border-crimson bg-crimson/5 ring-1 ring-crimson/20"
                     : "border-border hover:border-crimson/40 bg-paper"
                 }`}>
-                <span className="text-xl">{opt.icon}</span>
-                <span className={`mt-1 font-semibold ${payment === opt.id ? "text-crimson" : "text-ink"}`}>{opt.label}</span>
+                <span className="text-2xl">{opt.icon}</span>
+                <span className={`mt-1.5 font-bold text-sm ${payment === opt.id ? "text-crimson" : "text-ink"}`}>{opt.label}</span>
+                <span className="text-muted-foreground mt-0.5">{opt.sub}</span>
               </button>
             ))}
           </div>
+          {payment === "esewa" && (
+            <div className="mt-2 flex items-center gap-2 rounded-xl bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-800">
+              <Shield className="h-3.5 w-3.5 flex-shrink-0" />
+              Payment secured by eSewa. You'll be redirected to complete payment.
+            </div>
+          )}
         </div>
 
         {/* Note */}
@@ -375,8 +361,8 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         <button onClick={placeOrder} disabled={loading}
           className="w-full flex items-center justify-center gap-2 rounded-full bg-crimson py-3.5 text-sm font-bold text-paper shadow-card transition-all hover:scale-[1.02] hover:shadow-[0_6px_24px_rgba(192,57,43,0.4)] disabled:opacity-60 disabled:scale-100">
           {loading
-            ? <><Loader2 className="h-4 w-4 animate-spin" /> {payment === "cash" ? "Placing order…" : `Redirecting to ${payment === "esewa" ? "eSewa" : "Khalti"}…`}</>
-            : <><CreditCard className="h-4 w-4" /> {payment === "cash" ? "Confirm Order" : `Pay with ${payment === "esewa" ? "eSewa" : "Khalti"}`} &nbsp;·&nbsp; Rs {formatNpr(total)}</>}
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> {payment === "cash" ? "Placing order…" : "Redirecting to eSewa…"}</>
+            : <><CreditCard className="h-4 w-4" /> {payment === "cash" ? "Confirm Order" : "Pay with eSewa"} &nbsp;·&nbsp; Rs {formatNpr(total)}</>}
         </button>
 
         <p className="text-center text-xs text-muted-foreground">

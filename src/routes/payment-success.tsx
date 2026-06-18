@@ -4,7 +4,7 @@ import { CheckCircle2, Loader2, XCircle, ShoppingBag, Key } from "lucide-react";
 import { z } from "zod";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
-import { esewaVerify, khaltiVerify, finalizeOrderAndNotify } from "@/lib/payment.server";
+import { esewaVerify, finalizeOrderAndNotify } from "@/lib/payment.server";
 
 const searchSchema = z.object({
   gateway:  z.string().optional(),
@@ -40,11 +40,6 @@ function PaymentSuccessPage() {
           const result = await esewaVerify({ data: { encodedData: esewaData } });
           if (!result.valid) { setErrMsg("eSewa payment could not be verified."); setState("failed"); return; }
           confirmedOrderId = result.transactionUuid || order_id || null;
-
-        } else if (gateway === "khalti" && pidx) {
-          const result = await khaltiVerify({ data: { pidx } });
-          if (!result.valid) { setErrMsg("Khalti payment could not be verified."); setState("failed"); return; }
-          confirmedOrderId = result.orderId || order_id || null;
 
         } else {
           setErrMsg("Missing payment confirmation data.");
