@@ -23,21 +23,26 @@ export const esewaSign = createServerFn({ method: "POST" })
     totalAmount:     z.number(),
   }))
   .handler(async ({ data }) => {
-    const secret  = process.env.ESEWA_SECRET_KEY ?? "8gBm/:&EnhH.1/q";
-    const message =
-      `total_amount=${data.totalAmount},` +
+    const secret    = process.env.ESEWA_SECRET_KEY ?? "8gBm/:&EnhH.1/q";
+    // Amounts must be integers; the EXACT same string goes into both the
+    // HMAC message and the form fields so eSewa's signature check passes.
+    const totalStr  = String(Math.round(data.totalAmount));
+    const amtStr    = String(Math.round(data.itemAmount));
+    const delivStr  = String(Math.round(data.deliveryCharge));
+    const message   =
+      `total_amount=${totalStr},` +
       `transaction_uuid=${data.transactionUuid},` +
       `product_code=${ESEWA_MERCHANT}`;
     const sig = createHmac("sha256", secret).update(message).digest("base64");
     return {
       action:                  ESEWA_URL,
-      amount:                  data.itemAmount,
-      tax_amount:              0,
-      total_amount:            data.totalAmount,
+      amount:                  amtStr,
+      tax_amount:              "0",
+      total_amount:            totalStr,
       transaction_uuid:        data.transactionUuid,
       product_code:            ESEWA_MERCHANT,
-      product_service_charge:  0,
-      product_delivery_charge: data.deliveryCharge,
+      product_service_charge:  "0",
+      product_delivery_charge: delivStr,
       signed_field_names:      "total_amount,transaction_uuid,product_code",
       signature:               sig,
     };

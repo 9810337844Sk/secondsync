@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { recordView, getSimilarListings, getPersonalizedRecommendations } from "@/lib/recommendations";
 import { DamageAnalyzer } from "@/components/site/DamageAnalyzer";
-import { esewaSign } from "@/lib/payment.server";
+import { esewaSign, khaltiInitiate } from "@/lib/payment.server";
 
 export const Route = createFileRoute("/product/$id")({
   head: () => ({ meta: [{ title: "Listing — Second Sync" }] }),
@@ -76,7 +76,7 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
   const [buyerPhone, setBuyerPhone] = useState(profile?.phone ?? "");
   const [address, setAddress]     = useState("");
   const [delivery, setDelivery]   = useState<"pickup" | "pathao" | "bus">("pickup");
-  const [payment, setPayment]     = useState<"cash" | "esewa">("cash");
+  const [payment, setPayment]     = useState<"cash" | "esewa" | "khalti">("cash");
   const [note, setNote]           = useState("");
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState("");
@@ -171,14 +171,15 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         form.method = "POST";
         form.action = fields.action;
 
+        // esewaSign already returns amounts as strings — do NOT coerce again
         const params: Record<string, string> = {
-          amount:                  String(fields.amount),
-          tax_amount:              String(fields.tax_amount),
-          total_amount:            String(fields.total_amount),
+          amount:                  fields.amount,
+          tax_amount:              fields.tax_amount,
+          total_amount:            fields.total_amount,
           transaction_uuid:        fields.transaction_uuid,
           product_code:            fields.product_code,
-          product_service_charge:  String(fields.product_service_charge),
-          product_delivery_charge: String(fields.product_delivery_charge),
+          product_service_charge:  fields.product_service_charge,
+          product_delivery_charge: fields.product_delivery_charge,
           // eSewa appends &data=<encoded> to success_url
           success_url: `${origin}/payment-success?gateway=esewa&order_id=${orderId}`,
           failure_url: `${origin}/payment-cancel?order_id=${orderId}`,
@@ -199,6 +200,27 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
       } catch (err: any) {
         setLoading(false);
         setError("Could not initiate eSewa payment. Please try again.");
+      }
+      return;
+    }
+
+    // ── Khalti: initiate → redirect to Khalti hosted checkout ──────
+    if (payment === "khalti") {
+      try {
+        const origin = window.location.origin;
+        const { paymentUrl } = await khaltiInitiate({
+          data: {
+            orderId:    orderId,
+            orderName:  product.title.slice(0, 100),
+            amountNpr:  total,
+            returnUrl:  `${origin}/payment-success?gateway=khalti&order_id=${orderId}`,
+            websiteUrl: origin,
+          },
+        });
+        window.location.href = paymentUrl;
+      } catch (err: any) {
+        setLoading(false);
+        setError("Could not initiate Khalti payment. Please try again.");
       }
       return;
     }
@@ -304,10 +326,11 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         {/* Payment */}
         <div>
           <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Payment Method</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {([
-              { id: "cash",  label: "Cash on Meet", icon: "💵", sub: "Pay when you meet" },
-              { id: "esewa", label: "eSewa",         icon: "🟢", sub: "Secure online payment" },
+              { id: "cash",   label: "Cash on Meet", icon: "💵", sub: "Pay in person" },
+              { id: "esewa",  label: "eSewa",         icon: "🟢", sub: "Online payment" },
+              { id: "khalti", label: "Khalti",         icon: "💜", sub: "Online payment" },
             ] as const).map(opt => (
               <button key={opt.id} type="button" onClick={() => setPayment(opt.id)}
                 className={`flex flex-col items-center rounded-xl border p-3 text-center text-xs transition-all ${
@@ -322,9 +345,15 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
             ))}
           </div>
           {payment === "esewa" && (
-            <div className="mt-2 flex items-center gap-2 rounded-xl bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-800">
-              <Shield className="h-3.5 w-3.5 flex-shrink-0" />
-              Payment secured by eSewa. You'll be redirected to complete payment.
+            <div className="mt-2 rounded-xl bg-green-50 border border-green-200 px-3 py-2.5 text-xs text-green-800 space-y-1">
+              <div className="flex items-center gap-1.5 font-semibold"><Shield className="h-3.5 w-3.5 flex-shrink-0" /> Secured by eSewa</div>
+              <div className="text-green-700">Test: ID <strong>9806800001</strong> · Pass <strong>Nepal@123</strong> · OTP <strong>123456</strong></div>
+            </div>
+          )}
+          {payment === "khalti" && (
+            <div className="mt-2 rounded-xl bg-purple-50 border border-purple-200 px-3 py-2.5 text-xs text-purple-800 space-y-1">
+              <div className="flex items-center gap-1.5 font-semibold"><Shield className="h-3.5 w-3.5 flex-shrink-0" /> Secured by Khalti</div>
+              <div className="text-purple-700">Test: ID <strong>9800000001</strong> · MPIN <strong>1111</strong> · OTP <strong>987654</strong></div>
             </div>
           )}
         </div>
@@ -361,8 +390,8 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         <button onClick={placeOrder} disabled={loading}
           className="w-full flex items-center justify-center gap-2 rounded-full bg-crimson py-3.5 text-sm font-bold text-paper shadow-card transition-all hover:scale-[1.02] hover:shadow-[0_6px_24px_rgba(192,57,43,0.4)] disabled:opacity-60 disabled:scale-100">
           {loading
-            ? <><Loader2 className="h-4 w-4 animate-spin" /> {payment === "cash" ? "Placing order…" : "Redirecting to eSewa…"}</>
-            : <><CreditCard className="h-4 w-4" /> {payment === "cash" ? "Confirm Order" : "Pay with eSewa"} &nbsp;·&nbsp; Rs {formatNpr(total)}</>}
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> {payment === "cash" ? "Placing order…" : payment === "esewa" ? "Redirecting to eSewa…" : "Redirecting to Khalti…"}</>
+            : <><CreditCard className="h-4 w-4" /> {payment === "cash" ? "Confirm Order" : payment === "esewa" ? "Pay with eSewa" : "Pay with Khalti"} &nbsp;·&nbsp; Rs {formatNpr(total)}</>}
         </button>
 
         <p className="text-center text-xs text-muted-foreground">
