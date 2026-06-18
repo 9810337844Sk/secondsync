@@ -13,6 +13,8 @@ import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as TeamRouteImport } from './routes/team'
 import { Route as SellRouteImport } from './routes/sell'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as PaymentSuccessRouteImport } from './routes/payment-success'
+import { Route as PaymentCancelRouteImport } from './routes/payment-cancel'
 import { Route as MyListingsRouteImport } from './routes/my-listings'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
@@ -42,6 +44,16 @@ const SellRoute = SellRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaymentSuccessRoute = PaymentSuccessRouteImport.update({
+  id: '/payment-success',
+  path: '/payment-success',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaymentCancelRoute = PaymentCancelRouteImport.update({
+  id: '/payment-cancel',
+  path: '/payment-cancel',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MyListingsRoute = MyListingsRouteImport.update({
@@ -105,6 +117,8 @@ export interface FileRoutesByFullPath {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/my-listings': typeof MyListingsRoute
+  '/payment-cancel': typeof PaymentCancelRoute
+  '/payment-success': typeof PaymentSuccessRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sell': typeof SellRoute
   '/team': typeof TeamRoute
@@ -121,6 +135,8 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/my-listings': typeof MyListingsRoute
+  '/payment-cancel': typeof PaymentCancelRoute
+  '/payment-success': typeof PaymentSuccessRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sell': typeof SellRoute
   '/team': typeof TeamRoute
@@ -138,6 +154,8 @@ export interface FileRoutesById {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/my-listings': typeof MyListingsRoute
+  '/payment-cancel': typeof PaymentCancelRoute
+  '/payment-success': typeof PaymentSuccessRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sell': typeof SellRoute
   '/team': typeof TeamRoute
@@ -156,6 +174,8 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/my-listings'
+    | '/payment-cancel'
+    | '/payment-success'
     | '/reset-password'
     | '/sell'
     | '/team'
@@ -172,6 +192,8 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/my-listings'
+    | '/payment-cancel'
+    | '/payment-success'
     | '/reset-password'
     | '/sell'
     | '/team'
@@ -188,6 +210,8 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/my-listings'
+    | '/payment-cancel'
+    | '/payment-success'
     | '/reset-password'
     | '/sell'
     | '/team'
@@ -205,6 +229,8 @@ export interface RootRouteChildren {
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   MyListingsRoute: typeof MyListingsRoute
+  PaymentCancelRoute: typeof PaymentCancelRoute
+  PaymentSuccessRoute: typeof PaymentSuccessRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SellRoute: typeof SellRoute
   TeamRoute: typeof TeamRoute
@@ -240,6 +266,20 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/payment-success': {
+      id: '/payment-success'
+      path: '/payment-success'
+      fullPath: '/payment-success'
+      preLoaderRoute: typeof PaymentSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/payment-cancel': {
+      id: '/payment-cancel'
+      path: '/payment-cancel'
+      fullPath: '/payment-cancel'
+      preLoaderRoute: typeof PaymentCancelRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/my-listings': {
@@ -325,6 +365,8 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   MyListingsRoute: MyListingsRoute,
+  PaymentCancelRoute: PaymentCancelRoute,
+  PaymentSuccessRoute: PaymentSuccessRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SellRoute: SellRoute,
   TeamRoute: TeamRoute,

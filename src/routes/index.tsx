@@ -345,11 +345,12 @@ function Index() {
       </section>
 
       {/* ─── CATEGORIES ───────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+      <section id="categories" className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <SectionHeader
           eyebrow="Categories · वर्गहरू"
           title="Find what you love"
           subtitle="From valley electronics to mountain bikes — shop by category."
+          href="#categories"
         />
         <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           {categories
@@ -719,16 +720,30 @@ function SectionHeader({
   eyebrow,
   title,
   subtitle,
+  href,
 }: {
   eyebrow: string;
   title: string;
   subtitle?: string;
+  href?: string;
 }) {
+  function handleAnchorClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
+    const id = href?.replace("#", "");
+    document.getElementById(id ?? "")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (href) window.history.replaceState(null, "", href);
+  }
+
   return (
     <div className="max-w-2xl">
       <div className="text-xs font-semibold uppercase tracking-[0.25em] text-crimson">{eyebrow}</div>
       <h2 className="mt-3 font-display text-4xl font-bold text-ink text-balance sm:text-5xl">
-        {title}
+        {href ? (
+          <a href={href} onClick={handleAnchorClick}
+            className="hover:text-crimson transition-colors cursor-pointer">
+            {title}
+          </a>
+        ) : title}
       </h2>
       {subtitle && <p className="mt-3 text-muted-foreground">{subtitle}</p>}
     </div>

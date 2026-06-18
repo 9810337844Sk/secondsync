@@ -16,6 +16,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Header } from "@/components/site/Header";
 import { Footer } from "@/components/site/Footer";
 import { Chatbot } from "@/components/site/Chatbot";
+import { Preloader } from "@/components/site/Preloader";
 import { AuthProvider } from "@/lib/auth-context";
 
 function NotFoundComponent() {
@@ -131,6 +132,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <Preloader />
         {isAdmin ? (
           /* Admin pages: no header/footer/chatbot — full takeover */
           <Outlet />

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import {
   User, Package, ShoppingBag, Settings, LogOut,
   CheckCircle2, Clock, MapPin, Edit3, Save, X,
-  Loader2, BadgeCheck, Eye, Tag,
+  Loader2, BadgeCheck, Eye, EyeOff, Tag, ShoppingCart, Key,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
@@ -14,15 +14,7 @@ export const Route = createFileRoute("/dashboard")({
   component: DashboardPage,
 });
 
-type Tab = "overview" | "listings" | "orders" | "settings";
-
-type Order = {
-  id: string;
-  subject: string;
-  message: string;
-  created_at: string;
-  is_read: boolean;
-};
+type Tab = "overview" | "listings" | "orders" | "sales" | "settings";
 
 function DashboardPage() {
   const { user, profile, loading: authLoading, signOut, refreshProfile } = useAuth();
@@ -72,9 +64,10 @@ function DashboardPage() {
       {/* Tabs */}
       <div className="mb-6 flex gap-1 overflow-x-auto rounded-2xl border border-border bg-card p-1">
         {([
-          { id: "overview", label: "Overview",  icon: <User className="h-4 w-4" /> },
+          { id: "overview", label: "Overview",    icon: <User className="h-4 w-4" /> },
           { id: "listings", label: "My Listings", icon: <Tag className="h-4 w-4" /> },
           { id: "orders",   label: "My Orders",   icon: <ShoppingBag className="h-4 w-4" /> },
+          { id: "sales",    label: "Sales",        icon: <ShoppingCart className="h-4 w-4" /> },
           { id: "settings", label: "Settings",    icon: <Settings className="h-4 w-4" /> },
         ] as { id: Tab; label: string; icon: React.ReactNode }[]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
@@ -87,7 +80,8 @@ function DashboardPage() {
       {/* Content */}
       {tab === "overview" && <OverviewTab userId={user.id} profile={profile} />}
       {tab === "listings" && <ListingsTab userId={user.id} />}
-      {tab === "orders"   && <OrdersTab  email={user.email ?? ""} />}
+      {tab === "orders"   && <OrdersTab   email={user.email ?? ""} userId={user.id} />}
+      {tab === "sales"    && <SalesTab    userId={user.id} />}
       {tab === "settings" && <SettingsTab profile={profile} userId={user.id} onSaved={refreshProfile} />}
     </div>
   );
@@ -105,9 +99,9 @@ function OverviewTab({ userId, profile }: { userId: string; profile: any }) {
       const active = listings?.filter(l => !l.is_sold).length ?? 0;
       const sold   = listings?.filter(l =>  l.is_sold).length ?? 0;
 
-      const { count: orders } = await supabase.from("contact_messages")
+      const { count: orders } = await supabase.from("orders")
         .select("id", { count: "exact", head: true })
-        .eq("email", profile.email).like("subject", "Order:%");
+        .eq("buyer_id", userId);
 
       const { data: recentData } = await supabase.from("listings").select("*")
         .eq("seller_id", userId).eq("is_active", true).order("posted_at", { ascending: false }).limit(3);
@@ -280,16 +274,16 @@ function ListingsTab({ userId }: { userId: string }) {
 }
 
 /* ── Orders Tab ───────────────────────────────────────────────── */
-function OrdersTab({ email }: { email: string }) {
-  const [orders, setOrders] = useState<Order[]>([]);
+function OrdersTab({ email, userId }: { email: string; userId: string }) {
+  const [orders, setOrders]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from("contact_messages").select("*")
-      .eq("email", email).like("subject", "Order:%")
+    supabase.from("orders").select("*")
+      .eq("buyer_id", userId)
       .order("created_at", { ascending: false })
-      .then(({ data }) => { setOrders((data as Order[]) ?? []); setLoading(false); });
-  }, [email]);
+      .then(({ data }) => { setOrders(data ?? []); setLoading(false); });
+  }, [userId]);
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-crimson" /></div>;
   if (orders.length === 0) return (
@@ -301,38 +295,187 @@ function OrdersTab({ email }: { email: string }) {
     </div>
   );
 
+  const statusColor: Record<string, string> = {
+    pending:   "bg-yellow-100 text-yellow-700",
+    confirmed: "bg-blue-100 text-blue-700",
+    completed: "bg-green-100 text-green-700",
+    cancelled: "bg-red-100 text-red-600",
+  };
+
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground mb-2">{orders.length} order{orders.length !== 1 ? "s" : ""} placed</p>
-      {orders.map(o => {
-        // Parse key fields from message text
-        const lines = o.message.split("\n");
-        const get   = (prefix: string) => lines.find(l => l.startsWith(prefix))?.replace(prefix, "").trim() ?? "—";
-        return (
-          <div key={o.id} className="rounded-2xl border border-border bg-card p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold text-ink">{o.subject.replace("Order: ", "")}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  <Clock className="h-3 w-3 inline mr-1" />
-                  {new Date(o.created_at).toLocaleDateString("en-NP", { day: "numeric", month: "short", year: "numeric" })}
-                </p>
-              </div>
-              <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700 flex-shrink-0">
-                Sent to seller
-              </span>
+      {orders.map(o => (
+        <div key={o.id} className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <p className="font-semibold text-ink">{o.listing_title}</p>
+              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {new Date(o.created_at).toLocaleDateString("en-NP", { day: "numeric", month: "short", year: "numeric" })}
+              </p>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-              <div><span className="text-muted-foreground">Total: </span><span className="font-bold text-crimson">{get("Total:")}</span></div>
-              <div><span className="text-muted-foreground">Payment: </span><span className="font-medium">{get("Payment:")}</span></div>
-              <div><span className="text-muted-foreground">Delivery: </span><span className="font-medium capitalize">{get("Delivery:").split(" ")[0]}</span></div>
-              {get("Address:") !== "—" && (
-                <div><span className="text-muted-foreground">Address: </span><span className="font-medium">{get("Address:")}</span></div>
-              )}
+            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize flex-shrink-0 ${statusColor[o.status] ?? "bg-secondary text-ink"}`}>
+              {o.status}
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+            <div><span className="text-muted-foreground">Item price: </span><span className="font-medium">Rs {formatNpr(o.listing_price)}</span></div>
+            <div><span className="text-muted-foreground">Delivery: </span><span className="font-medium capitalize">{o.delivery}{o.delivery_cost > 0 ? ` (+Rs ${o.delivery_cost})` : " (Free)"}</span></div>
+            <div><span className="text-muted-foreground">Payment: </span><span className="font-medium uppercase">{o.payment}</span></div>
+            {o.delivery_address && <div><span className="text-muted-foreground">Address: </span><span className="font-medium">{o.delivery_address}</span></div>}
+            <div className="col-span-2 border-t border-border pt-2 mt-1 flex justify-between">
+              <span className="font-bold text-ink">Total</span>
+              <span className="font-bold text-crimson">Rs {formatNpr(o.total)}</span>
             </div>
           </div>
-        );
-      })}
+          {o.note && <p className="mt-2 text-xs text-muted-foreground italic">Note: {o.note}</p>}
+          {/* Show delivery OTP for buyer on confirmed orders */}
+          {o.status === "confirmed" && o.delivery_otp && (
+            <div className="mt-3 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <Key className="h-5 w-5 text-amber-600 flex-shrink-0" />
+              <div>
+                <p className="text-xs font-semibold text-amber-800">Delivery Code</p>
+                <p className="font-display text-2xl font-bold tracking-widest text-ink">{o.delivery_otp}</p>
+                <p className="text-xs text-amber-700">Share this code with the seller on delivery</p>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Sales Tab (seller view) ──────────────────────────────────── */
+function SalesTab({ userId }: { userId: string }) {
+  const [orders, setOrders]     = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [otpInputs, setOtpInputs]     = useState<Record<string, string>>({});
+  const [verifying, setVerifying]     = useState<string | null>(null);
+  const [otpErrors, setOtpErrors]     = useState<Record<string, string>>({});
+  const [otpSuccess, setOtpSuccess]   = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    supabase.from("orders").select("*")
+      .eq("seller_id", userId)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => { setOrders(data ?? []); setLoading(false); });
+  }, [userId]);
+
+  async function verifyOtp(orderId: string) {
+    const otp = (otpInputs[orderId] ?? "").trim();
+    if (otp.length !== 6 || !/^\d{6}$/.test(otp)) {
+      setOtpErrors(p => ({ ...p, [orderId]: "Enter the 6-digit code from the buyer." }));
+      return;
+    }
+    setVerifying(orderId);
+    setOtpErrors(p => ({ ...p, [orderId]: "" }));
+    const { error } = await supabase.rpc("verify_delivery_otp", {
+      p_order_id:  orderId,
+      p_seller_id: userId,
+      p_otp:       otp,
+    });
+    setVerifying(null);
+    if (error) {
+      setOtpErrors(p => ({ ...p, [orderId]: "Wrong code. Please check with the buyer and try again." }));
+    } else {
+      setOtpSuccess(p => ({ ...p, [orderId]: true }));
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: "completed" } : o));
+    }
+  }
+
+  const statusColor: Record<string, string> = {
+    pending:   "bg-yellow-100 text-yellow-700",
+    confirmed: "bg-blue-100 text-blue-700",
+    completed: "bg-green-100 text-green-700",
+    cancelled: "bg-red-100 text-red-600",
+  };
+
+  if (loading) return <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-crimson" /></div>;
+  if (orders.length === 0) return (
+    <div className="flex flex-col items-center gap-4 py-16 text-center">
+      <ShoppingCart className="h-12 w-12 text-muted-foreground" />
+      <p className="font-semibold text-ink">No sales yet</p>
+      <p className="text-sm text-muted-foreground">When buyers place orders on your listings, they'll appear here.</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">{orders.length} order{orders.length !== 1 ? "s" : ""} received</p>
+      {orders.map(o => (
+        <div key={o.id} className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <p className="font-semibold text-ink">{o.listing_title}</p>
+              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {new Date(o.created_at).toLocaleDateString("en-NP", { day: "numeric", month: "short", year: "numeric" })}
+              </p>
+            </div>
+            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize flex-shrink-0 ${statusColor[o.status] ?? "bg-secondary text-ink"}`}>
+              {o.status}
+            </span>
+          </div>
+
+          {/* Buyer info */}
+          <div className="mt-3 rounded-xl border border-border bg-secondary/30 p-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+            <div><span className="text-muted-foreground">Buyer: </span><span className="font-medium">{o.buyer_name}</span></div>
+            <div><span className="text-muted-foreground">Phone: </span><span className="font-medium">+977-{o.buyer_phone}</span></div>
+            <div><span className="text-muted-foreground">Email: </span><span className="font-medium">{o.buyer_email}</span></div>
+            <div><span className="text-muted-foreground">Payment: </span><span className="font-medium uppercase">{o.payment}</span></div>
+            <div><span className="text-muted-foreground">Delivery: </span><span className="font-medium capitalize">{o.delivery}{o.delivery_cost > 0 ? ` (+Rs ${o.delivery_cost})` : ""}</span></div>
+            {o.delivery_address && <div><span className="text-muted-foreground">Address: </span><span className="font-medium">{o.delivery_address}</span></div>}
+            <div className="col-span-2 border-t border-border pt-2 mt-1 flex justify-between">
+              <span className="font-bold text-ink">Total</span>
+              <span className="font-bold text-crimson">Rs {formatNpr(o.total)}</span>
+            </div>
+          </div>
+
+          {o.note && <p className="mt-2 text-xs text-muted-foreground italic">Buyer note: {o.note}</p>}
+
+          {/* OTP verification for confirmed orders */}
+          {o.status === "confirmed" && !otpSuccess[o.id] && (
+            <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <p className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5">
+                <Key className="h-4 w-4" /> Confirm Delivery
+              </p>
+              <p className="text-xs text-blue-700 mb-3">Ask the buyer for their 6-digit delivery code, then enter it below to complete the transaction and release payment.</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="6-digit code"
+                  value={otpInputs[o.id] ?? ""}
+                  onChange={e => setOtpInputs(p => ({ ...p, [o.id]: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
+                  className="w-36 rounded-xl border border-border bg-paper px-4 py-2.5 text-center font-display text-lg font-bold tracking-widest outline-none focus:border-blue-400"
+                />
+                <button
+                  onClick={() => verifyOtp(o.id)}
+                  disabled={verifying === o.id}
+                  className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition-colors"
+                >
+                  {verifying === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Verify
+                </button>
+              </div>
+              {otpErrors[o.id] && (
+                <p className="mt-2 text-xs text-red-600">{otpErrors[o.id]}</p>
+              )}
+            </div>
+          )}
+
+          {/* Success state after OTP verified */}
+          {(o.status === "completed" || otpSuccess[o.id]) && (
+            <div className="mt-3 flex items-center gap-2 rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">
+              <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+              <span className="font-medium">Delivery confirmed! Transaction complete. Listing has been removed from browse.</span>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

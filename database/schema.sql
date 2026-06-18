@@ -28,9 +28,14 @@ drop function if exists public.handle_new_user()                   cascade;
 drop function if exists public.create_user_account(text,text,text,text) cascade;
 drop function if exists public.store_verification_code(text, text) cascade;
 drop function if exists public.verify_email_code(text, text)       cascade;
+drop function if exists public.confirm_order_payment(uuid, uuid)          cascade;
+drop function if exists public.cancel_order_payment(uuid, uuid)           cascade;
+drop function if exists public.confirm_and_prepare_delivery(uuid, uuid, text) cascade;
+drop function if exists public.verify_delivery_otp(uuid, uuid, text)     cascade;
 
 drop table if exists public.contact_messages   cascade;
 drop table if exists public.activity_logs      cascade;
+drop table if exists public.orders             cascade;
 drop table if exists public.listings           cascade;
 drop table if exists public.verification_codes cascade;
 drop table if exists public.profiles           cascade;
@@ -201,6 +206,11 @@ create policy "contact_insert_public"
   on public.contact_messages for insert
   with check (true);
 
+-- Buyers can read their own orders (matched by email)
+create policy "contact_select_own"
+  on public.contact_messages for select
+  using (email = (select email from public.profiles where id = auth.uid()));
+
 create policy "contact_select_admin"
   on public.contact_messages for select
   using (
@@ -218,6 +228,230 @@ create policy "contact_update_admin"
       where p.id = auth.uid() and p.is_admin = true
     )
   );
+
+
+-- ─────────────────────────────────────────────────────────────
+-- 6b. ORDERS TABLE (dedicated — replaces contact_messages for orders)
+-- ─────────────────────────────────────────────────────────────
+create table public.orders (
+  id             uuid        primary key default gen_random_uuid(),
+  listing_id     uuid        references public.listings(id) on delete set null,
+  buyer_id       uuid        references public.profiles(id) on delete set null,
+  seller_id      uuid        references public.profiles(id) on delete set null,
+  buyer_name     text        not null,
+  buyer_phone    text        not null,
+  buyer_email    text        not null,
+  listing_title  text        not null,
+  listing_price  numeric     not null,
+  delivery       text        not null default 'pickup',
+  delivery_cost  numeric     not null default 0,
+  delivery_address text,
+  payment        text        not null default 'cash',
+  note           text,
+  total          numeric     not null,
+  status         text        not null default 'pending',
+  -- pending → confirmed → completed | cancelled
+  seller_notified boolean    not null default false,
+  delivery_otp   text,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+alter table public.orders enable row level security;
+
+-- Buyers can insert orders
+create policy "orders_insert_buyer"
+  on public.orders for insert
+  with check (auth.uid() is not null and auth.uid() = buyer_id);
+
+-- Buyers can read their own orders
+create policy "orders_select_buyer"
+  on public.orders for select
+  using (auth.uid() = buyer_id);
+
+-- Sellers can read orders for their listings
+create policy "orders_select_seller"
+  on public.orders for select
+  using (auth.uid() = seller_id);
+
+-- Admins have full access
+create policy "orders_all_admin"
+  on public.orders for all
+  using (
+    exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid() and p.is_admin = true
+    )
+  );
+
+-- Buyers can cancel their own pending orders
+create policy "orders_update_buyer_cancel"
+  on public.orders for update
+  using  (auth.uid() = buyer_id and status = 'pending')
+  with check (status = 'cancelled');
+
+grant select, insert, update on public.orders to authenticated;
+
+
+-- ─────────────────────────────────────────────────────────────
+-- 6c. PAYMENT RPCs (security definer — run as postgres, bypass RLS)
+-- ─────────────────────────────────────────────────────────────
+
+-- confirm_order_payment: marks order as 'confirmed' and listing as sold.
+-- Called from the payment-success callback page after gateway verification.
+-- Idempotent: calling it on an already-confirmed order is a no-op.
+create or replace function public.confirm_order_payment(
+  p_order_id  uuid,
+  p_buyer_id  uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_listing_id uuid;
+  v_status     text;
+begin
+  select listing_id, status
+  into   v_listing_id, v_status
+  from   orders
+  where  id = p_order_id and buyer_id = p_buyer_id;
+
+  if not found then
+    raise exception 'Order not found';
+  end if;
+
+  -- Already confirmed / completed — idempotent, no error
+  if v_status in ('confirmed', 'completed') then
+    return;
+  end if;
+
+  if v_status != 'pending' then
+    raise exception 'Order cannot be confirmed (status: %)', v_status;
+  end if;
+
+  update orders  set status = 'confirmed', updated_at = now() where id = p_order_id;
+
+  if v_listing_id is not null then
+    update listings set is_sold = true where id = v_listing_id;
+  end if;
+end;
+$$;
+
+-- cancel_order_payment: marks a pending order as 'cancelled'.
+-- Called when the buyer aborts the payment gateway flow.
+create or replace function public.cancel_order_payment(
+  p_order_id uuid,
+  p_buyer_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update orders
+  set    status = 'cancelled', updated_at = now()
+  where  id = p_order_id
+    and  buyer_id = p_buyer_id
+    and  status   = 'pending';
+end;
+$$;
+
+grant execute on function public.confirm_order_payment(uuid, uuid) to authenticated;
+grant execute on function public.cancel_order_payment(uuid, uuid)  to authenticated;
+
+
+-- ─────────────────────────────────────────────────────────────
+-- 6d. DELIVERY OTP RPCs
+-- ─────────────────────────────────────────────────────────────
+
+-- confirm_and_prepare_delivery: stores the delivery OTP on a confirmed order
+-- and returns seller + order info for the notification email.
+-- Called from a server function using the anon key, so granted to anon.
+create or replace function public.confirm_and_prepare_delivery(
+  p_order_id uuid,
+  p_buyer_id uuid,
+  p_otp      text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_order  record;
+  v_seller record;
+begin
+  select * into v_order
+  from orders
+  where id = p_order_id and buyer_id = p_buyer_id and status = 'confirmed';
+
+  if not found then
+    raise exception 'Order not found or not yet confirmed';
+  end if;
+
+  update orders
+  set delivery_otp = p_otp, updated_at = now()
+  where id = p_order_id;
+
+  select email, full_name into v_seller
+  from profiles where id = v_order.seller_id;
+
+  return jsonb_build_object(
+    'seller_email',     v_seller.email,
+    'seller_name',      v_seller.full_name,
+    'buyer_name',       v_order.buyer_name,
+    'buyer_phone',      v_order.buyer_phone,
+    'buyer_email',      v_order.buyer_email,
+    'listing_title',    v_order.listing_title,
+    'total',            v_order.total,
+    'delivery',         v_order.delivery,
+    'delivery_address', v_order.delivery_address,
+    'payment',          v_order.payment,
+    'note',             v_order.note
+  );
+end;
+$$;
+
+-- verify_delivery_otp: called by the seller to confirm delivery.
+-- Validates OTP, marks order 'completed', removes the listing from browse.
+create or replace function public.verify_delivery_otp(
+  p_order_id  uuid,
+  p_seller_id uuid,
+  p_otp       text
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_listing_id uuid;
+begin
+  if not exists (
+    select 1 from orders
+    where id           = p_order_id
+      and seller_id    = p_seller_id
+      and status       = 'confirmed'
+      and delivery_otp = p_otp
+  ) then
+    raise exception 'Invalid delivery code or order not eligible';
+  end if;
+
+  select listing_id into v_listing_id from orders where id = p_order_id;
+
+  update orders
+  set status = 'completed', delivery_otp = null, updated_at = now()
+  where id = p_order_id;
+
+  if v_listing_id is not null then
+    update listings set is_sold = true, is_active = false where id = v_listing_id;
+  end if;
+end;
+$$;
+
+grant execute on function public.confirm_and_prepare_delivery(uuid, uuid, text) to anon, authenticated;
+grant execute on function public.verify_delivery_otp(uuid, uuid, text)          to authenticated;
 
 
 -- ─────────────────────────────────────────────────────────────

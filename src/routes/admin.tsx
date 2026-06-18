@@ -4,6 +4,7 @@ import {
   Users, Activity, TrendingUp,
   Ban, CheckCircle2, Search, RefreshCw,
   Eye, Clock, ShieldCheck, Lock, EyeOff, LogOut, Mail, MailOpen,
+  Package, ShoppingCart, Trash2, Tag, MapPin,
 } from "lucide-react";
 import { supabase, type UserProfile } from "@/lib/supabase";
 import pattern from "@/assets/pattern.jpg";
@@ -255,11 +256,13 @@ function AdminLoginGate({ onSuccess }: { onSuccess: () => void }) {
 
 /* ─── Dashboard ──────────────────────────────────────────────────── */
 function AdminDashboard({ onLogout }: { onLogout: () => void }) {
-  const [tab, setTab] = useState<"overview" | "users" | "activity" | "messages">("overview");
+  const [tab, setTab] = useState<"overview" | "users" | "products" | "orders" | "messages" | "activity">("overview");
 
   const tabs = [
     { id: "overview"  as const, label: "Overview",     icon: TrendingUp },
     { id: "users"     as const, label: "Users",        icon: Users      },
+    { id: "products"  as const, label: "Products",     icon: Package    },
+    { id: "orders"    as const, label: "Orders",       icon: ShoppingCart },
     { id: "messages"  as const, label: "Messages",     icon: Mail       },
     { id: "activity"  as const, label: "Activity Log", icon: Activity   },
   ];
@@ -319,10 +322,12 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
       {/* Content */}
       <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "2rem 1.5rem" }}>
-        {tab === "overview" && <OverviewTab />}
-        {tab === "users"    && <UsersTab />}
-        {tab === "messages" && <MessagesTab />}
-        {tab === "activity" && <ActivityTab />}
+        {tab === "overview"  && <OverviewTab />}
+        {tab === "users"     && <UsersTab />}
+        {tab === "products"  && <ProductsTab />}
+        {tab === "orders"    && <AdminOrdersTab />}
+        {tab === "messages"  && <MessagesTab />}
+        {tab === "activity"  && <ActivityTab />}
       </div>
     </div>
   );
@@ -560,6 +565,417 @@ function UsersTab() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+/* ─── Products Tab ───────────────────────────────────────────────── */
+type Listing = {
+  id: string;
+  title: string;
+  category: string;
+  price: number;
+  condition: string;
+  location: string;
+  seller_name: string;
+  seller_email: string;
+  images: string[];
+  is_active: boolean;
+  is_sold: boolean;
+  posted_at: string;
+};
+
+function ProductsTab() {
+  const [listings, setListings]       = useState<Listing[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState("");
+  const [filter, setFilter]           = useState<"all" | "active" | "sold" | "inactive">("all");
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  async function loadListings() {
+    setLoading(true);
+    const { data } = await supabase.from("listings").select("*").order("posted_at", { ascending: false });
+    setListings((data as Listing[]) ?? []);
+    setLoading(false);
+  }
+
+  useEffect(() => { loadListings(); }, []);
+
+  async function toggleSold(l: Listing) {
+    setActionLoading(l.id + "-sold");
+    await supabase.from("listings").update({ is_sold: !l.is_sold }).eq("id", l.id);
+    setListings(p => p.map(x => x.id === l.id ? { ...x, is_sold: !l.is_sold } : x));
+    setActionLoading(null);
+  }
+
+  async function toggleActive(l: Listing) {
+    setActionLoading(l.id + "-active");
+    await supabase.from("listings").update({ is_active: !l.is_active }).eq("id", l.id);
+    setListings(p => p.map(x => x.id === l.id ? { ...x, is_active: !l.is_active } : x));
+    setActionLoading(null);
+  }
+
+  async function deleteListing(l: Listing) {
+    if (!confirm(`Delete "${l.title}"? This cannot be undone.`)) return;
+    setActionLoading(l.id + "-del");
+    await supabase.from("listings").delete().eq("id", l.id);
+    setListings(p => p.filter(x => x.id !== l.id));
+    setActionLoading(null);
+  }
+
+  const filtered = listings.filter(l => {
+    const ms = !search || l.title.toLowerCase().includes(search.toLowerCase()) || l.seller_email?.toLowerCase().includes(search.toLowerCase());
+    const mf = filter === "all" || (filter === "active" && l.is_active && !l.is_sold) || (filter === "sold" && l.is_sold) || (filter === "inactive" && !l.is_active);
+    return ms && mf;
+  });
+
+  function fmtPrice(n: number) { return n.toLocaleString("en-NP"); }
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", marginBottom: "1.25rem" }}>
+        <h2 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: "1.4rem", fontWeight: 700, color: "#1a0a0a", margin: 0 }}>
+          Products <span style={{ fontSize: "0.9rem", fontWeight: 400, color: "#888", marginLeft: "0.4rem" }}>({listings.length})</span>
+        </h2>
+        <button onClick={loadListings} style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: "#fff", border: "1px solid #e8e0d8", borderRadius: "10px", padding: "0.5rem 1rem", fontSize: "0.82rem", fontWeight: 600, color: "#444", cursor: "pointer" }}>
+          <RefreshCw style={{ width: "14px", height: "14px" }} /> Refresh
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+        <div style={{ position: "relative", flex: "1", minWidth: "200px" }}>
+          <Search style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", width: "15px", height: "15px", color: "#999" }} />
+          <input type="text" placeholder="Search by title or seller…" value={search} onChange={e => setSearch(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: "#fff", border: "1px solid #e8e0d8", borderRadius: "10px", padding: "0.6rem 1rem 0.6rem 2.25rem", fontSize: "0.85rem", color: "#1a0a0a", outline: "none" }} />
+        </div>
+        <div style={{ display: "flex", gap: "0.4rem" }}>
+          {(["all", "active", "sold", "inactive"] as const).map(f => (
+            <button key={f} onClick={() => setFilter(f)} style={{ padding: "0.6rem 1rem", borderRadius: "10px", border: filter === f ? "none" : "1px solid #e8e0d8", background: filter === f ? "#c0392b" : "#fff", color: filter === f ? "#fff" : "#666", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e8e0d8", overflow: "hidden" }}>
+        {loading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4rem", color: "#888", gap: "0.5rem" }}>
+            <RefreshCw style={{ width: "20px", height: "20px", animation: "spin 1s linear infinite" }} /> Loading…
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: "4rem", textAlign: "center", color: "#bbb" }}>
+            <Package style={{ width: "40px", height: "40px", margin: "0 auto 0.75rem", display: "block", opacity: 0.3 }} />
+            <p style={{ margin: 0 }}>No listings found.</p>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+              <thead>
+                <tr style={{ background: "#faf8f5", borderBottom: "1px solid #e8e0d8" }}>
+                  {["Item", "Category", "Price", "Status", "Seller", "Posted", "Actions"].map(h => (
+                    <th key={h} style={{ padding: "0.85rem 1.25rem", textAlign: h === "Actions" ? "right" : "left", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#888", whiteSpace: "nowrap" }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((l, i) => (
+                  <tr key={l.id} style={{ borderBottom: i < filtered.length - 1 ? "1px solid #f0ece6" : "none", opacity: !l.is_active ? 0.5 : 1 }}>
+                    {/* Item */}
+                    <td style={{ padding: "0.85rem 1.25rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        {l.images?.[0]
+                          ? <img src={l.images[0]} alt="" style={{ width: "42px", height: "42px", borderRadius: "10px", objectFit: "cover", flexShrink: 0, border: "1px solid #e8e0d8" }} />
+                          : <div style={{ width: "42px", height: "42px", borderRadius: "10px", background: "#f0ece6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Package style={{ width: "18px", height: "18px", color: "#ccc" }} /></div>
+                        }
+                        <div>
+                          <div style={{ fontWeight: 600, color: "#1a0a0a", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</div>
+                          <div style={{ fontSize: "0.72rem", color: "#999", display: "flex", alignItems: "center", gap: "0.2rem", marginTop: "0.1rem" }}>
+                            <MapPin style={{ width: "10px", height: "10px" }} />{l.location} · {l.condition}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    {/* Category */}
+                    <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.78rem", color: "#666", textTransform: "capitalize" }}>{l.category}</td>
+                    {/* Price */}
+                    <td style={{ padding: "0.85rem 1.25rem", fontWeight: 700, color: "#c0392b" }}>Rs {fmtPrice(l.price)}</td>
+                    {/* Status */}
+                    <td style={{ padding: "0.85rem 1.25rem" }}>
+                      {l.is_sold
+                        ? <span style={{ background: "#FEE2E2", color: "#DC2626", borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 700 }}>Sold</span>
+                        : l.is_active
+                          ? <span style={{ background: "#DCFCE7", color: "#16A34A", borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 700 }}>Active</span>
+                          : <span style={{ background: "#F3EDE5", color: "#888",    borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 700 }}>Inactive</span>
+                      }
+                    </td>
+                    {/* Seller */}
+                    <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.78rem", color: "#666" }}>
+                      <div>{l.seller_name}</div>
+                      <div style={{ color: "#aaa" }}>{l.seller_email}</div>
+                    </td>
+                    {/* Posted */}
+                    <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.78rem", color: "#aaa", whiteSpace: "nowrap" }}>
+                      {new Date(l.posted_at).toLocaleDateString("en-NP", { month: "short", day: "numeric", year: "numeric" })}
+                    </td>
+                    {/* Actions */}
+                    <td style={{ padding: "0.85rem 1.25rem", textAlign: "right" }}>
+                      <div style={{ display: "flex", gap: "0.4rem", justifyContent: "flex-end", flexWrap: "nowrap" }}>
+                        <button onClick={() => toggleSold(l)} disabled={!!actionLoading}
+                          style={{ padding: "0.35rem 0.75rem", borderRadius: "8px", border: "none", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", background: l.is_sold ? "#DCFCE7" : "#FEF3C7", color: l.is_sold ? "#16A34A" : "#D97706", whiteSpace: "nowrap", opacity: actionLoading ? 0.5 : 1 }}>
+                          <Tag style={{ width: "11px", height: "11px", display: "inline", marginRight: "0.25rem" }} />
+                          {l.is_sold ? "Unmark Sold" : "Mark Sold"}
+                        </button>
+                        <button onClick={() => toggleActive(l)} disabled={!!actionLoading}
+                          style={{ padding: "0.35rem 0.75rem", borderRadius: "8px", border: "none", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", background: l.is_active ? "#FEE2E2" : "#DCFCE7", color: l.is_active ? "#DC2626" : "#16A34A", whiteSpace: "nowrap", opacity: actionLoading ? 0.5 : 1 }}>
+                          {l.is_active ? "Deactivate" : "Activate"}
+                        </button>
+                        <button onClick={() => deleteListing(l)} disabled={!!actionLoading}
+                          style={{ padding: "0.35rem 0.6rem", borderRadius: "8px", border: "none", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", background: "#FEE2E2", color: "#DC2626", opacity: actionLoading ? 0.5 : 1 }}>
+                          <Trash2 style={{ width: "13px", height: "13px" }} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+/* ─── Admin Orders Tab ───────────────────────────────────────────── */
+type Order = {
+  id: string;
+  listing_title: string;
+  listing_price: number;
+  buyer_name: string;
+  buyer_email: string;
+  buyer_phone: string;
+  delivery: string;
+  delivery_cost: number;
+  delivery_address: string | null;
+  payment: string;
+  note: string | null;
+  total: number;
+  status: string;
+  created_at: string;
+};
+
+function AdminOrdersTab() {
+  const [orders, setOrders]   = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter]   = useState<"all" | "pending" | "confirmed" | "completed" | "cancelled">("all");
+  const [selected, setSelected] = useState<Order | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  async function loadOrders() {
+    setLoading(true);
+    const { data } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
+    setOrders((data as Order[]) ?? []);
+    setLoading(false);
+  }
+
+  useEffect(() => { loadOrders(); }, []);
+
+  async function updateStatus(o: Order, status: string) {
+    setUpdatingId(o.id);
+    await supabase.from("orders").update({ status, updated_at: new Date().toISOString() }).eq("id", o.id);
+    setOrders(p => p.map(x => x.id === o.id ? { ...x, status } : x));
+    if (selected?.id === o.id) setSelected({ ...o, status });
+    setUpdatingId(null);
+  }
+
+  const filtered = orders.filter(o => filter === "all" || o.status === filter);
+
+  function fmtPrice(n: number) { return n.toLocaleString("en-NP"); }
+
+  const statusStyle: Record<string, { bg: string; color: string }> = {
+    pending:   { bg: "#FFFBEB", color: "#D97706" },
+    confirmed: { bg: "#DBEAFE", color: "#2563EB" },
+    completed: { bg: "#DCFCE7", color: "#16A34A" },
+    cancelled: { bg: "#FEE2E2", color: "#DC2626" },
+  };
+
+  const nextStatus: Record<string, string> = {
+    pending:   "confirmed",
+    confirmed: "completed",
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", marginBottom: "1.25rem" }}>
+        <h2 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: "1.4rem", fontWeight: 700, color: "#1a0a0a", margin: 0 }}>
+          Orders <span style={{ fontSize: "0.9rem", fontWeight: 400, color: "#888", marginLeft: "0.4rem" }}>({orders.length})</span>
+        </h2>
+        <button onClick={loadOrders} style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: "#fff", border: "1px solid #e8e0d8", borderRadius: "10px", padding: "0.5rem 1rem", fontSize: "0.82rem", fontWeight: 600, color: "#444", cursor: "pointer" }}>
+          <RefreshCw style={{ width: "14px", height: "14px" }} /> Refresh
+        </button>
+      </div>
+
+      {/* Status filter */}
+      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+        {(["all", "pending", "confirmed", "completed", "cancelled"] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            style={{ padding: "0.5rem 1rem", borderRadius: "10px", border: filter === f ? "none" : "1px solid #e8e0d8", background: filter === f ? "#c0392b" : "#fff", color: filter === f ? "#fff" : "#666", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>
+            {f}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: selected ? "1fr 360px" : "1fr" }}>
+        {/* Orders list */}
+        <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e8e0d8", overflow: "hidden" }}>
+          {loading ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4rem", color: "#888", gap: "0.5rem" }}>
+              <RefreshCw style={{ width: "20px", height: "20px", animation: "spin 1s linear infinite" }} /> Loading…
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: "4rem", textAlign: "center", color: "#bbb" }}>
+              <ShoppingCart style={{ width: "40px", height: "40px", margin: "0 auto 0.75rem", display: "block", opacity: 0.3 }} />
+              <p style={{ margin: 0 }}>No orders yet.</p>
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+                <thead>
+                  <tr style={{ background: "#faf8f5", borderBottom: "1px solid #e8e0d8" }}>
+                    {["Item", "Buyer", "Total", "Delivery", "Payment", "Status", "Date", ""].map(h => (
+                      <th key={h} style={{ padding: "0.85rem 1.25rem", textAlign: "left", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#888", whiteSpace: "nowrap" }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((o, i) => {
+                    const ss = statusStyle[o.status] ?? { bg: "#F3EDE5", color: "#888" };
+                    return (
+                      <tr key={o.id} onClick={() => setSelected(selected?.id === o.id ? null : o)}
+                        style={{ borderBottom: i < filtered.length - 1 ? "1px solid #f0ece6" : "none", cursor: "pointer", background: selected?.id === o.id ? "#fdf5f5" : "#fff", transition: "background 0.12s" }}>
+                        <td style={{ padding: "0.85rem 1.25rem", fontWeight: 600, color: "#1a0a0a", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.listing_title}</td>
+                        <td style={{ padding: "0.85rem 1.25rem" }}>
+                          <div style={{ fontSize: "0.82rem", fontWeight: 600, color: "#1a0a0a" }}>{o.buyer_name}</div>
+                          <div style={{ fontSize: "0.72rem", color: "#999" }}>{o.buyer_email}</div>
+                        </td>
+                        <td style={{ padding: "0.85rem 1.25rem", fontWeight: 700, color: "#c0392b", whiteSpace: "nowrap" }}>Rs {fmtPrice(o.total)}</td>
+                        <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.78rem", color: "#666", textTransform: "capitalize" }}>{o.delivery}</td>
+                        <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.78rem", color: "#666", textTransform: "uppercase" }}>{o.payment}</td>
+                        <td style={{ padding: "0.85rem 1.25rem" }}>
+                          <span style={{ background: ss.bg, color: ss.color, borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 700, textTransform: "capitalize" }}>
+                            {o.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", color: "#aaa", whiteSpace: "nowrap" }}>
+                          {new Date(o.created_at).toLocaleDateString("en-NP", { month: "short", day: "numeric", year: "numeric" })}
+                        </td>
+                        <td style={{ padding: "0.85rem 1.25rem" }}>
+                          <Eye style={{ width: "14px", height: "14px", color: "#bbb" }} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Detail pane */}
+        {selected && (
+          <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e8e0d8", padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem", alignSelf: "start" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <h3 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: "1.15rem", fontWeight: 700, color: "#1a0a0a", margin: 0 }}>Order Details</h3>
+              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: "#bbb", cursor: "pointer", fontSize: "1.3rem", lineHeight: 1, padding: 0 }}>×</button>
+            </div>
+
+            {/* Status badge */}
+            {(() => {
+              const ss = statusStyle[selected.status] ?? { bg: "#F3EDE5", color: "#888" };
+              return (
+                <span style={{ display: "inline-flex", alignSelf: "flex-start", background: ss.bg, color: ss.color, borderRadius: "999px", padding: "0.35rem 1rem", fontSize: "0.75rem", fontWeight: 700, textTransform: "capitalize" }}>
+                  {selected.status}
+                </span>
+              );
+            })()}
+
+            {/* Summary rows */}
+            <div style={{ background: "#faf8f5", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.65rem", fontSize: "0.82rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#888" }}>Item</span>
+                <span style={{ fontWeight: 600, color: "#1a0a0a", maxWidth: "200px", textAlign: "right" }}>{selected.listing_title}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#888" }}>Buyer</span>
+                <span style={{ fontWeight: 600, color: "#1a0a0a" }}>{selected.buyer_name}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#888" }}>Email</span>
+                <a href={`mailto:${selected.buyer_email}`} style={{ color: "#c0392b", textDecoration: "none" }}>{selected.buyer_email}</a>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#888" }}>Phone</span>
+                <span style={{ fontWeight: 600, color: "#1a0a0a" }}>+977-{selected.buyer_phone}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#888" }}>Delivery</span>
+                <span style={{ fontWeight: 600, color: "#1a0a0a", textTransform: "capitalize" }}>{selected.delivery}{selected.delivery_cost > 0 ? ` (+Rs ${selected.delivery_cost})` : " (Free)"}</span>
+              </div>
+              {selected.delivery_address && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#888" }}>Address</span>
+                  <span style={{ fontWeight: 600, color: "#1a0a0a" }}>{selected.delivery_address}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#888" }}>Payment</span>
+                <span style={{ fontWeight: 600, color: "#1a0a0a", textTransform: "uppercase" }}>{selected.payment}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #e8e0d8", paddingTop: "0.65rem", marginTop: "0.2rem" }}>
+                <span style={{ fontWeight: 700, color: "#1a0a0a" }}>Total</span>
+                <span style={{ fontWeight: 800, color: "#c0392b" }}>Rs {fmtPrice(selected.total)}</span>
+              </div>
+            </div>
+
+            {selected.note && (
+              <div style={{ background: "#fffbf0", border: "1px solid #fde68a", borderRadius: "10px", padding: "0.75rem 1rem", fontSize: "0.8rem", color: "#92400e" }}>
+                <span style={{ fontWeight: 700 }}>Note: </span>{selected.note}
+              </div>
+            )}
+
+            {/* Status actions */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <p style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#999", margin: 0 }}>Update Status</p>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                {nextStatus[selected.status] && (
+                  <button onClick={() => updateStatus(selected, nextStatus[selected.status])} disabled={updatingId === selected.id}
+                    style={{ padding: "0.5rem 1rem", borderRadius: "8px", border: "none", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", background: "#DBEAFE", color: "#2563EB", opacity: updatingId ? 0.5 : 1 }}>
+                    Mark {nextStatus[selected.status].charAt(0).toUpperCase() + nextStatus[selected.status].slice(1)}
+                  </button>
+                )}
+                {selected.status !== "cancelled" && selected.status !== "completed" && (
+                  <button onClick={() => updateStatus(selected, "cancelled")} disabled={updatingId === selected.id}
+                    style={{ padding: "0.5rem 1rem", borderRadius: "8px", border: "none", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", background: "#FEE2E2", color: "#DC2626", opacity: updatingId ? 0.5 : 1 }}>
+                    Cancel Order
+                  </button>
+                )}
+                {selected.status === "cancelled" && (
+                  <button onClick={() => updateStatus(selected, "pending")} disabled={updatingId === selected.id}
+                    style={{ padding: "0.5rem 1rem", borderRadius: "8px", border: "none", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", background: "#FFFBEB", color: "#D97706", opacity: updatingId ? 0.5 : 1 }}>
+                    Reopen as Pending
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>

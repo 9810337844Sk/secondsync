@@ -49,10 +49,9 @@ function MyListingsPage() {
 
   async function removeListing(id: string) {
     setActionId(id);
-    const { error, count } = await supabase.from("listings").update({ is_active: false })
-      .eq("id", id).eq("seller_id", user!.id)
-      .select("id", { count: "exact", head: true });
-    if (error || count === 0) {
+    const { error } = await supabase.from("listings").update({ is_active: false })
+      .eq("id", id).eq("seller_id", user!.id);
+    if (error) {
       await supabase.from("listings").delete().eq("id", id).eq("seller_id", user!.id);
     }
     setListings(prev => prev.filter(l => l.id !== id));

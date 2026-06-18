@@ -4,18 +4,63 @@ import {
   ArrowLeft, MapPin, Clock, ChevronLeft, ChevronRight,
   CheckCircle2, Trash2, Tag, ShoppingBag, Package,
   CreditCard, Loader2, Shield, Truck, X,
-  BadgeCheck, AlertCircle, TrendingUp,
+  BadgeCheck, AlertCircle, TrendingUp, Zap,
 } from "lucide-react";
 import { formatNpr, timeAgo, type Product } from "@/lib/products";
 import { ProductCard } from "@/components/site/ProductCard";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { recordView, getSimilarListings, getPersonalizedRecommendations } from "@/lib/recommendations";
+import { DamageAnalyzer } from "@/components/site/DamageAnalyzer";
+import { esewaSign, khaltiInitiate } from "@/lib/payment.server";
 
 export const Route = createFileRoute("/product/$id")({
   head: () => ({ meta: [{ title: "Listing — Second Sync" }] }),
   component: ProductPage,
 });
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Damage analysis from a URL (fetches → blob → File)              */
+/* ─────────────────────────────────────────────────────────────── */
+function DamageAnalyzerFromUrl({ imageUrl }: { imageUrl: string }) {
+  const [file, setFile]     = useState<File | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [fetchErr, setFetchErr] = useState("");
+
+  async function fetchAndAnalyze() {
+    setFetching(true);
+    setFetchErr("");
+    try {
+      const res  = await fetch(imageUrl);
+      const blob = await res.blob();
+      const f    = new File([blob], "product.jpg", { type: blob.type || "image/jpeg" });
+      setFile(f);
+    } catch {
+      setFetchErr("Could not load image for analysis.");
+    } finally {
+      setFetching(false);
+    }
+  }
+
+  if (fetchErr) return <p className="text-xs text-red-500">{fetchErr}</p>;
+
+  if (!file && !fetching) {
+    return (
+      <button onClick={fetchAndAnalyze}
+        className="flex items-center gap-2 rounded-full border border-crimson/30 bg-crimson/5 px-4 py-2 text-xs font-semibold text-crimson hover:bg-crimson/10 hover:scale-105 transition-all">
+        <Zap className="h-3.5 w-3.5" /> Analyse Cover Photo
+      </button>
+    );
+  }
+
+  if (fetching) return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin text-crimson" /> Loading image…
+    </div>
+  );
+
+  return <DamageAnalyzer imageFile={file!} />;
+}
 
 /* ─────────────────────────────────────────────────────────────── */
 /* Inline Order Panel (replaces modal)                             */
@@ -48,27 +93,136 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
     setLoading(true);
     setError("");
 
-    const orderText = [
-      "🛒 ORDER REQUEST",
-      `Item: ${product.title} (ID: ${product.id})`,
-      `Price: Rs ${formatNpr(product.price)}`,
-      `Delivery: ${delivery} (+Rs ${deliveryCost})`,
-      `Total: Rs ${formatNpr(total)}`,
-      `Payment: ${payment.toUpperCase()}`,
-      `Buyer: ${buyerName} | +977-${buyerPhone}`,
-      address ? `Address: ${address}` : null,
-      note    ? `Note: ${note}`       : null,
-      `Seller: ${product.seller_email ?? product.seller_name}`,
-    ].filter(Boolean).join("\n");
+    // 1. Generate UUID client-side so we don't depend on SELECT-after-INSERT
+    //    (Supabase SELECT RLS on returning rows can silently block .single())
+    const orderId = crypto.randomUUID();
 
-    const { error: dbErr } = await supabase.from("contact_messages").insert({
-      name: buyerName, email: user.email ?? "",
-      subject: `Order: ${product.title}`, message: orderText,
-    });
+    const { error: orderErr } = await supabase
+      .from("orders")
+      .insert({
+        id:               orderId,
+        listing_id:       product.id,
+        buyer_id:         user.id,
+        seller_id:        product.seller_id,
+        buyer_name:       buyerName,
+        buyer_phone:      buyerPhone,
+        buyer_email:      user.email ?? "",
+        listing_title:    product.title,
+        listing_price:    product.price,
+        delivery,
+        delivery_cost:    deliveryCost,
+        delivery_address: address || null,
+        payment,
+        note:             note || null,
+        total,
+        // cash orders are immediately confirmed; online payments stay pending until verified
+        status: payment === "cash" ? "confirmed" : "pending",
+      });
 
-    setLoading(false);
-    if (dbErr) { setError("Could not place order. Please try again."); return; }
-    setStep("placed");
+    if (orderErr) {
+      setLoading(false);
+      setError(`Could not place order: ${orderErr.message}`);
+      return;
+    }
+
+    // ── Cash on meet: mark sold + notify + done ─────────────────
+    if (payment === "cash") {
+      await supabase.from("listings").update({ is_sold: true }).eq("id", product.id);
+      await supabase.from("contact_messages").insert({
+        name:    buyerName,
+        email:   user.email ?? "",
+        subject: `🛒 New Order: ${product.title}`,
+        message: [
+          `New order received for your listing!`,
+          ``,
+          `Item: ${product.title}`,
+          `Buyer: ${buyerName} | +977-${buyerPhone}`,
+          `Delivery: ${delivery}${deliveryCost > 0 ? ` (+Rs ${deliveryCost})` : " (Free)"}`,
+          address ? `Address: ${address}` : "",
+          `Payment: CASH ON MEET`,
+          `Total: Rs ${formatNpr(total)}`,
+          note ? `Note: ${note}` : "",
+        ].filter(Boolean).join("\n"),
+      });
+      await supabase.from("activity_logs").insert({
+        user_id: user.id,
+        action:  "ORDER_PLACED",
+        detail:  `${buyerName} ordered "${product.title}" for Rs ${formatNpr(total)}.`,
+      });
+      setLoading(false);
+      setStep("placed");
+      return;
+    }
+
+    // ── eSewa: generate signature → submit hidden form ──────────
+    if (payment === "esewa") {
+      try {
+        const origin = window.location.origin;
+        const fields = await esewaSign({
+          data: {
+            transactionUuid: orderId,
+            itemAmount:      product.price,
+            deliveryCharge:  deliveryCost,
+            totalAmount:     total,
+          },
+        });
+
+        const form = document.createElement("form");
+        form.method = "POST";
+        form.action = fields.action;
+
+        const params: Record<string, string> = {
+          amount:                  String(fields.amount),
+          tax_amount:              String(fields.tax_amount),
+          total_amount:            String(fields.total_amount),
+          transaction_uuid:        fields.transaction_uuid,
+          product_code:            fields.product_code,
+          product_service_charge:  String(fields.product_service_charge),
+          product_delivery_charge: String(fields.product_delivery_charge),
+          // eSewa appends &data=<encoded> to success_url
+          success_url: `${origin}/payment-success?gateway=esewa&order_id=${orderId}`,
+          failure_url: `${origin}/payment-cancel?order_id=${orderId}`,
+          signed_field_names: fields.signed_field_names,
+          signature:          fields.signature,
+        };
+
+        for (const [k, v] of Object.entries(params)) {
+          const input = document.createElement("input");
+          input.type  = "hidden";
+          input.name  = k;
+          input.value = v;
+          form.appendChild(input);
+        }
+
+        document.body.appendChild(form);
+        form.submit(); // navigates away — no need to setLoading(false)
+      } catch (err: any) {
+        setLoading(false);
+        setError("Could not initiate eSewa payment. Please try again.");
+      }
+      return;
+    }
+
+    // ── Khalti: initiate → redirect to hosted checkout ──────────
+    if (payment === "khalti") {
+      try {
+        const origin = window.location.origin;
+        const { paymentUrl } = await khaltiInitiate({
+          data: {
+            orderId,
+            orderName:  product.title,
+            amountNpr:  total,
+            returnUrl:  `${origin}/payment-success?gateway=khalti&order_id=${orderId}`,
+            websiteUrl: origin,
+          },
+        });
+        window.location.href = paymentUrl; // navigates away
+      } catch (err: any) {
+        setLoading(false);
+        setError("Could not initiate Khalti payment. Please try again.");
+      }
+      return;
+    }
   }
 
   /* ── Success state ── */
@@ -221,8 +375,8 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         <button onClick={placeOrder} disabled={loading}
           className="w-full flex items-center justify-center gap-2 rounded-full bg-crimson py-3.5 text-sm font-bold text-paper shadow-card transition-all hover:scale-[1.02] hover:shadow-[0_6px_24px_rgba(192,57,43,0.4)] disabled:opacity-60 disabled:scale-100">
           {loading
-            ? <><Loader2 className="h-4 w-4 animate-spin" /> Placing order…</>
-            : <><CreditCard className="h-4 w-4" /> Confirm Order &nbsp;·&nbsp; Rs {formatNpr(total)}</>}
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> {payment === "cash" ? "Placing order…" : `Redirecting to ${payment === "esewa" ? "eSewa" : "Khalti"}…`}</>
+            : <><CreditCard className="h-4 w-4" /> {payment === "cash" ? "Confirm Order" : `Pay with ${payment === "esewa" ? "eSewa" : "Khalti"}`} &nbsp;·&nbsp; Rs {formatNpr(total)}</>}
         </button>
 
         <p className="text-center text-xs text-muted-foreground">
@@ -267,10 +421,9 @@ function ProductPage() {
   async function handleRemove() {
     if (!product) return;
     setActionLoading(true); setActionError("");
-    const { error, count } = await supabase.from("listings")
-      .update({ is_active: false }).eq("id", product.id).eq("seller_id", user!.id)
-      .select("id", { count: "exact", head: true });
-    if (error || count === 0) {
+    const { error } = await supabase.from("listings")
+      .update({ is_active: false }).eq("id", product.id).eq("seller_id", user!.id);
+    if (error) {
       const { error: delErr } = await supabase.from("listings")
         .delete().eq("id", product.id).eq("seller_id", user!.id);
       if (delErr) { setActionError("Could not remove. Please try again."); setActionLoading(false); return; }
@@ -399,6 +552,25 @@ function ProductPage() {
             <h2 className="font-display text-lg font-bold text-ink mb-3">About this item</h2>
             <p className="leading-relaxed text-ink/80 whitespace-pre-line">{product.description}</p>
           </div>
+
+          {/* AI Damage Analysis — shown to buyers so they know item condition */}
+          {!isSeller && !product.is_sold && (
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Zap className="h-4 w-4 text-crimson" />
+                <h3 className="font-semibold text-ink text-sm">AI Condition Analysis</h3>
+                <span className="rounded-full bg-crimson/10 px-2 py-0.5 text-[10px] font-bold text-crimson uppercase tracking-wide">Beta</span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                Our AI analyses the seller's photos to detect visible damage and verify the listed condition.
+              </p>
+              {product.images?.[0] ? (
+                <DamageAnalyzerFromUrl imageUrl={product.images[0]} />
+              ) : (
+                <p className="text-xs text-muted-foreground">No image available for analysis.</p>
+              )}
+            </div>
+          )}
 
           {/* Trust badges */}
           <div className="grid grid-cols-3 gap-3 text-xs text-center">
