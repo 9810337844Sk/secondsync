@@ -65,11 +65,17 @@ function PaymentSuccessPage() {
           return;
         }
 
-        // Generate delivery OTP, store it, and email the seller — all in one server call
-        const { otp } = await finalizeOrderAndNotify({
-          data: { orderId: confirmedOrderId, buyerId: user.id },
-        });
-        setDeliveryOtp(otp);
+        // Generate delivery OTP, store it, and email the seller.
+        // Non-fatal: if the DB schema is outdated or email fails,
+        // the payment is still confirmed — just no OTP shown.
+        try {
+          const { otp } = await finalizeOrderAndNotify({
+            data: { orderId: confirmedOrderId, buyerId: user.id },
+          });
+          setDeliveryOtp(otp);
+        } catch {
+          // OTP will be missing but payment is confirmed — user can still proceed
+        }
 
         await supabase.from("activity_logs").insert({
           user_id: user.id,
