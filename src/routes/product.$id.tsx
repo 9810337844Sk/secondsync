@@ -93,6 +93,13 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
     setLoading(true);
     setError("");
 
+    // Ensure a profile row exists for this user — the FK orders.buyer_id → profiles.id
+    // requires it. The row may be absent if the schema was re-run after signup.
+    await supabase.from("profiles").upsert(
+      { id: user.id, email: user.email ?? "", full_name: buyerName, phone: buyerPhone },
+      { onConflict: "id", ignoreDuplicates: true },
+    );
+
     // 1. Generate UUID client-side so we don't depend on SELECT-after-INSERT
     //    (Supabase SELECT RLS on returning rows can silently block .single())
     const orderId = crypto.randomUUID();
