@@ -8,6 +8,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { formatNpr, timeAgo, type Product } from "@/lib/products";
+import { notifyOrderCompleted } from "@/lib/payment.server";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({ meta: [{ title: "My Dashboard — Second Sync" }] }),
@@ -355,13 +356,38 @@ function SalesTab({ userId }: { userId: string }) {
   const [verifying, setVerifying]     = useState<string | null>(null);
   const [otpErrors, setOtpErrors]     = useState<Record<string, string>>({});
   const [otpSuccess, setOtpSuccess]   = useState<Record<string, boolean>>({});
+  const [newOrderToast, setNewOrderToast] = useState<{ title: string; buyer: string } | null>(null);
 
   useEffect(() => {
+    // Initial load
     supabase.from("orders").select("*")
       .eq("seller_id", userId)
       .order("created_at", { ascending: false })
       .then(({ data }) => { setOrders(data ?? []); setLoading(false); });
+
+    // Realtime: listen for new orders placed on this seller's listings
+    const channel = supabase
+      .channel(`seller_orders_${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "orders", filter: `seller_id=eq.${userId}` },
+        (payload) => {
+          const o = payload.new as any;
+          setOrders((prev) => [o, ...prev]);
+          setNewOrderToast({ title: o.listing_title, buyer: o.buyer_name });
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [userId]);
+
+  // Auto-dismiss toast after 7 s
+  useEffect(() => {
+    if (!newOrderToast) return;
+    const t = setTimeout(() => setNewOrderToast(null), 7000);
+    return () => clearTimeout(t);
+  }, [newOrderToast]);
 
   async function verifyOtp(orderId: string) {
     const otp = (otpInputs[orderId] ?? "").trim();
@@ -382,6 +408,8 @@ function SalesTab({ userId }: { userId: string }) {
     } else {
       setOtpSuccess(p => ({ ...p, [orderId]: true }));
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: "completed" } : o));
+      // Send completion emails to both buyer and seller (non-fatal)
+      notifyOrderCompleted({ data: { orderId, sellerId: userId } }).catch(() => {});
     }
   }
 
@@ -403,6 +431,24 @@ function SalesTab({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* New-order toast */}
+      {newOrderToast && (
+        <div className="flex items-start gap-3 rounded-2xl border border-green-300 bg-green-50 px-4 py-3 shadow-card animate-in slide-in-from-top-2 duration-300">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-green-100">
+            <ShoppingCart className="h-4 w-4 text-green-700" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-green-900 text-sm">New order received!</p>
+            <p className="text-green-800 text-xs mt-0.5 truncate">
+              <span className="font-semibold">{newOrderToast.buyer}</span> ordered "{newOrderToast.title}"
+            </p>
+          </div>
+          <button onClick={() => setNewOrderToast(null)} className="flex-shrink-0 text-green-400 hover:text-green-700">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       <p className="text-sm text-muted-foreground">{orders.length} order{orders.length !== 1 ? "s" : ""} received</p>
       {orders.map(o => (
         <div key={o.id} className="rounded-2xl border border-border bg-card p-5">
@@ -437,32 +483,34 @@ function SalesTab({ userId }: { userId: string }) {
 
           {/* OTP verification for confirmed orders */}
           {o.status === "confirmed" && !otpSuccess[o.id] && (
-            <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
-              <p className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5">
-                <Key className="h-4 w-4" /> Confirm Delivery
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-800 mb-1 flex items-center gap-1.5">
+                <Key className="h-4 w-4" /> Enter Buyer's Delivery Code
               </p>
-              <p className="text-xs text-blue-700 mb-3">Ask the buyer for their 6-digit delivery code, then enter it below to complete the transaction and release payment.</p>
+              <p className="text-xs text-amber-700 mb-3">
+                When you hand over the item, ask the buyer for their 6-digit code from <strong>My Orders → Delivery Code</strong>. Enter it below to confirm delivery and complete the transaction.
+              </p>
               <div className="flex gap-2">
                 <input
                   type="text"
                   inputMode="numeric"
                   maxLength={6}
-                  placeholder="6-digit code"
+                  placeholder="000000"
                   value={otpInputs[o.id] ?? ""}
                   onChange={e => setOtpInputs(p => ({ ...p, [o.id]: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
-                  className="w-36 rounded-xl border border-border bg-paper px-4 py-2.5 text-center font-display text-lg font-bold tracking-widest outline-none focus:border-blue-400"
+                  className="w-36 rounded-xl border border-amber-300 bg-paper px-4 py-2.5 text-center font-display text-xl font-bold tracking-[0.3em] outline-none focus:border-amber-500"
                 />
                 <button
                   onClick={() => verifyOtp(o.id)}
-                  disabled={verifying === o.id}
-                  className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition-colors"
+                  disabled={verifying === o.id || (otpInputs[o.id] ?? "").length !== 6}
+                  className="flex items-center gap-2 rounded-xl bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
                 >
                   {verifying === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Verify
+                  Confirm
                 </button>
               </div>
               {otpErrors[o.id] && (
-                <p className="mt-2 text-xs text-red-600">{otpErrors[o.id]}</p>
+                <p className="mt-2 text-xs text-red-600 font-medium">{otpErrors[o.id]}</p>
               )}
             </div>
           )}
@@ -470,8 +518,11 @@ function SalesTab({ userId }: { userId: string }) {
           {/* Success state after OTP verified */}
           {(o.status === "completed" || otpSuccess[o.id]) && (
             <div className="mt-3 flex items-center gap-2 rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">
-              <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-              <span className="font-medium">Delivery confirmed! Transaction complete. Listing has been removed from browse.</span>
+              <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" />
+              <div>
+                <p className="font-semibold">Transaction complete!</p>
+                <p className="text-xs text-green-700 mt-0.5">Delivery confirmed. The listing has been removed from browse.</p>
+              </div>
             </div>
           )}
         </div>

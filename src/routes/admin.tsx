@@ -1,11 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  Users, Activity, TrendingUp,
+  Users, TrendingUp,
   Ban, CheckCircle2, Search, RefreshCw,
   Eye, Clock, ShieldCheck, Lock, EyeOff, LogOut, Mail, MailOpen,
-  Package, ShoppingCart, Trash2, Tag, MapPin,
+  Package, ShoppingCart, Trash2, Tag, MapPin, Phone, X, AlertCircle,
 } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+} from "recharts";
 import { supabase, type UserProfile } from "@/lib/supabase";
 import pattern from "@/assets/pattern.jpg";
 
@@ -16,15 +19,6 @@ export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "Admin Dashboard — Second Sync" }] }),
   component: AdminPage,
 });
-
-type ActivityLog = {
-  id: string;
-  user_id: string;
-  action: string;
-  detail: string;
-  created_at: string;
-  profiles?: { full_name: string | null; email: string };
-};
 
 type ContactMessage = {
   id: string;
@@ -256,15 +250,14 @@ function AdminLoginGate({ onSuccess }: { onSuccess: () => void }) {
 
 /* ─── Dashboard ──────────────────────────────────────────────────── */
 function AdminDashboard({ onLogout }: { onLogout: () => void }) {
-  const [tab, setTab] = useState<"overview" | "users" | "products" | "orders" | "messages" | "activity">("overview");
+  const [tab, setTab] = useState<"overview" | "users" | "products" | "orders" | "messages">("overview");
 
   const tabs = [
-    { id: "overview"  as const, label: "Overview",     icon: TrendingUp },
-    { id: "users"     as const, label: "Users",        icon: Users      },
-    { id: "products"  as const, label: "Products",     icon: Package    },
-    { id: "orders"    as const, label: "Orders",       icon: ShoppingCart },
-    { id: "messages"  as const, label: "Messages",     icon: Mail       },
-    { id: "activity"  as const, label: "Activity Log", icon: Activity   },
+    { id: "overview"  as const, label: "Overview",  icon: TrendingUp   },
+    { id: "users"     as const, label: "Users",     icon: Users        },
+    { id: "products"  as const, label: "Products",  icon: Package      },
+    { id: "orders"    as const, label: "Orders",    icon: ShoppingCart },
+    { id: "messages"  as const, label: "Messages",  icon: Mail         },
   ];
 
   return (
@@ -327,34 +320,61 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         {tab === "products"  && <ProductsTab />}
         {tab === "orders"    && <AdminOrdersTab />}
         {tab === "messages"  && <MessagesTab />}
-        {tab === "activity"  && <ActivityTab />}
       </div>
     </div>
   );
 }
 
 /* ─── Overview ───────────────────────────────────────────────────── */
+type OrderStat = { status: string; count: number; color: string };
+
 function OverviewTab() {
-  const [stats, setStats] = useState({ totalUsers: 0, bannedUsers: 0, adminUsers: 0, activityEvents: 0 });
+  const [stats, setStats] = useState({ totalUsers: 0, bannedUsers: 0, totalListings: 0, unreadMessages: 0 });
+  const [orderStats, setOrderStats] = useState<OrderStat[]>([]);
+  const [orderTotal, setOrderTotal] = useState(0);
+  const [revenue, setRevenue] = useState(0);
 
   useEffect(() => {
     async function load() {
-      const [{ count: t }, { count: b }, { count: a }, { count: e }] = await Promise.all([
+      const [{ count: t }, { count: b }, { count: l }, { count: u }, { data: orders }] = await Promise.all([
         supabase.from("profiles").select("*", { count: "exact", head: true }),
         supabase.from("profiles").select("*", { count: "exact", head: true }).eq("is_banned", true),
-        supabase.from("profiles").select("*", { count: "exact", head: true }).eq("is_admin", true),
-        supabase.from("activity_logs").select("*", { count: "exact", head: true }),
+        supabase.from("listings").select("*", { count: "exact", head: true }).eq("is_active", true),
+        supabase.from("contact_messages").select("*", { count: "exact", head: true }).eq("is_read", false),
+        supabase.from("orders").select("status, total"),
       ]);
-      setStats({ totalUsers: t ?? 0, bannedUsers: b ?? 0, adminUsers: a ?? 0, activityEvents: e ?? 0 });
+      setStats({ totalUsers: t ?? 0, bannedUsers: b ?? 0, totalListings: l ?? 0, unreadMessages: u ?? 0 });
+
+      if (orders) {
+        const byStatus: Record<string, number> = {};
+        let rev = 0;
+        for (const o of orders as { status: string; total: number }[]) {
+          byStatus[o.status] = (byStatus[o.status] ?? 0) + 1;
+          if (o.status === "completed") rev += o.total ?? 0;
+        }
+        setOrderTotal(orders.length);
+        setRevenue(rev);
+        const COLOR: Record<string, string> = {
+          pending: "#D97706", confirmed: "#2563EB", completed: "#16A34A", cancelled: "#DC2626",
+        };
+        setOrderStats(
+          Object.entries(byStatus).map(([status, count]) => ({
+            status: status.charAt(0).toUpperCase() + status.slice(1),
+            count,
+            color: COLOR[status] ?? "#888",
+          }))
+        );
+      }
     }
     load();
   }, []);
 
-  const cards = [
-    { icon: Users,      label: "Total Users",      value: stats.totalUsers,      bg: "#EFF6FF", iconBg: "#DBEAFE", iconColor: "#2563EB" },
-    { icon: Ban,        label: "Banned Users",      value: stats.bannedUsers,     bg: "#FFF1F1", iconBg: "#FEE2E2", iconColor: "#DC2626" },
-    { icon: ShieldCheck,label: "Admin Accounts",   value: stats.adminUsers,      bg: "#FFFBEB", iconBg: "#FEF3C7", iconColor: "#D97706" },
-    { icon: Activity,   label: "Activity Events",  value: stats.activityEvents,  bg: "#F0FDF4", iconBg: "#DCFCE7", iconColor: "#16A34A" },
+  const statCards = [
+    { icon: Users,       label: "Total Users",      value: stats.totalUsers,      bg: "#EFF6FF", iconBg: "#DBEAFE", iconColor: "#2563EB" },
+    { icon: Ban,         label: "Banned Users",     value: stats.bannedUsers,     bg: "#FFF1F1", iconBg: "#FEE2E2", iconColor: "#DC2626" },
+    { icon: Package,     label: "Active Listings",  value: stats.totalListings,   bg: "#F0FDF4", iconBg: "#DCFCE7", iconColor: "#16A34A" },
+    { icon: ShoppingCart,label: "Total Orders",     value: orderTotal,            bg: "#FFFBEB", iconBg: "#FEF3C7", iconColor: "#D97706" },
+    { icon: Mail,        label: "Unread Messages",  value: stats.unreadMessages,  bg: "#FAF5FF", iconBg: "#EDE9FE", iconColor: "#7C3AED" },
   ];
 
   return (
@@ -365,7 +385,7 @@ function OverviewTab() {
 
       {/* Stat cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
-        {cards.map((c) => (
+        {statCards.map((c) => (
           <div key={c.label} style={{ background: c.bg, borderRadius: "16px", padding: "1.5rem", border: "1px solid rgba(0,0,0,0.06)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "44px", height: "44px", borderRadius: "50%", background: c.iconBg }}>
               <c.icon style={{ width: "20px", height: "20px", color: c.iconColor }} />
@@ -378,27 +398,71 @@ function OverviewTab() {
         ))}
       </div>
 
-      {/* Quick actions */}
-      <div style={{ marginTop: "2rem", background: "#fff", borderRadius: "16px", border: "1px solid #e8e0d8", padding: "1.5rem" }}>
-        <h3 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: "1.15rem", fontWeight: 700, color: "#1a0a0a", marginBottom: "1rem" }}>
-          Quick Actions
-        </h3>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem" }}>
-          {[
-            { label: "Manage Users",   desc: "Ban, unban, promote",   icon: Users    },
-            { label: "Activity Logs",  desc: "Full audit trail",      icon: Activity },
-            { label: "Live Stats",     desc: "Real-time metrics",     icon: TrendingUp },
-          ].map((a) => (
-            <div key={a.label} style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem", background: "#faf8f5", borderRadius: "12px", border: "1px solid #e8e0d8", padding: "1rem", cursor: "pointer" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "36px", height: "36px", borderRadius: "50%", background: "rgba(192,57,43,0.1)", flexShrink: 0 }}>
-                <a.icon style={{ width: "16px", height: "16px", color: "#c0392b" }} />
-              </div>
-              <div>
-                <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#1a0a0a" }}>{a.label}</div>
-                <div style={{ fontSize: "0.75rem", color: "#888", marginTop: "0.15rem" }}>{a.desc}</div>
-              </div>
+      {/* Order Dashboard chart */}
+      <div style={{ marginTop: "2rem", display: "grid", gap: "1rem", gridTemplateColumns: "1fr 300px" }}>
+        {/* Bar chart */}
+        <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e8e0d8", padding: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+            <h3 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: "1.15rem", fontWeight: 700, color: "#1a0a0a", margin: 0 }}>
+              Orders by Status
+            </h3>
+            <span style={{ fontSize: "0.75rem", color: "#888" }}>{orderTotal} total orders</span>
+          </div>
+          {orderStats.length === 0 ? (
+            <div style={{ height: "220px", display: "flex", alignItems: "center", justifyContent: "center", color: "#ccc", fontSize: "0.875rem" }}>
+              No orders yet
             </div>
-          ))}
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={orderStats} barSize={48}>
+                <XAxis dataKey="status" tick={{ fontSize: 12, fill: "#888" }} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#aaa" }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ borderRadius: "10px", border: "1px solid #e8e0d8", boxShadow: "0 4px 16px rgba(0,0,0,0.08)", fontSize: "0.82rem" }}
+                  cursor={{ fill: "rgba(192,57,43,0.05)" }}
+                />
+                <Bar dataKey="count" radius={[8, 8, 0, 0]}>
+                  {orderStats.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* Revenue + legend */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ background: "linear-gradient(135deg, #c0392b, #8e1a10)", borderRadius: "16px", padding: "1.5rem", color: "#fff" }}>
+            <div style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em", opacity: 0.7, marginBottom: "0.5rem" }}>
+              Completed Revenue
+            </div>
+            <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: "2rem", fontWeight: 800 }}>
+              Rs {revenue.toLocaleString("en-NP")}
+            </div>
+            <div style={{ fontSize: "0.75rem", opacity: 0.65, marginTop: "0.35rem" }}>from completed orders only</div>
+          </div>
+
+          <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e8e0d8", padding: "1.25rem", flex: 1 }}>
+            <div style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em", color: "#aaa", marginBottom: "0.75rem" }}>
+              Status Breakdown
+            </div>
+            {orderStats.length === 0 ? (
+              <p style={{ fontSize: "0.82rem", color: "#ccc", margin: 0 }}>No data</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                {orderStats.map((s) => (
+                  <div key={s.status} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.85rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: s.color, flexShrink: 0 }} />
+                      <span style={{ color: "#444" }}>{s.status}</span>
+                    </div>
+                    <span style={{ fontWeight: 700, color: "#1a0a0a" }}>{s.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -406,12 +470,21 @@ function OverviewTab() {
 }
 
 /* ─── Users Tab ──────────────────────────────────────────────────── */
+type UserDetail = UserProfile & {
+  _listings?: { id: string; title: string; price: number; is_sold: boolean; posted_at: string }[];
+  _orders?: { id: string; listing_title: string; total: number; status: string; created_at: string }[];
+  _listingCount?: number;
+  _orderCount?: number;
+};
+
 function UsersTab() {
   const [users, setUsers]               = useState<UserProfile[]>([]);
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState("");
   const [filter, setFilter]             = useState<"all" | "banned" | "admin">("all");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   async function loadUsers() {
     setLoading(true);
@@ -422,21 +495,34 @@ function UsersTab() {
 
   useEffect(() => { loadUsers(); }, []);
 
+  async function openUser(u: UserProfile) {
+    if (selectedUser?.id === u.id) { setSelectedUser(null); return; }
+    setDetailLoading(true);
+    setSelectedUser(u as UserDetail);
+    const [{ data: listings }, { data: orders }] = await Promise.all([
+      supabase.from("listings").select("id,title,price,is_sold,posted_at").eq("seller_id", u.id).order("posted_at", { ascending: false }).limit(5),
+      supabase.from("orders").select("id,listing_title,total,status,created_at").eq("buyer_id", u.id).order("created_at", { ascending: false }).limit(5),
+    ]);
+    setSelectedUser({
+      ...u,
+      _listings: (listings as any) ?? [],
+      _orders: (orders as any) ?? [],
+      _listingCount: listings?.length ?? 0,
+      _orderCount: orders?.length ?? 0,
+    });
+    setDetailLoading(false);
+  }
+
   async function toggleBan(u: UserProfile) {
     setActionLoading(u.id);
     const nb = !u.is_banned;
-    await supabase.from("profiles").update({ is_banned: nb }).eq("id", u.id);
-    await supabase.from("activity_logs").insert({ user_id: u.id, action: nb ? "USER_BANNED" : "USER_UNBANNED", detail: `User ${u.email} was ${nb ? "banned" : "unbanned"} by admin.` });
-    setUsers((p) => p.map((x) => x.id === u.id ? { ...x, is_banned: nb } : x));
-    setActionLoading(null);
-  }
-
-  async function toggleAdmin(u: UserProfile) {
-    setActionLoading(u.id + "-admin");
-    const na = !u.is_admin;
-    await supabase.from("profiles").update({ is_admin: na }).eq("id", u.id);
-    await supabase.from("activity_logs").insert({ user_id: u.id, action: na ? "ADMIN_GRANTED" : "ADMIN_REVOKED", detail: `Admin rights ${na ? "granted to" : "revoked from"} ${u.email}.` });
-    setUsers((p) => p.map((x) => x.id === u.id ? { ...x, is_admin: na } : x));
+    // Direct .update() is blocked by RLS — use SECURITY DEFINER RPC instead
+    const { error } = await supabase.rpc("admin_ban_user", { p_user_id: u.id, p_is_banned: nb });
+    if (!error) {
+      await supabase.from("activity_logs").insert({ user_id: u.id, action: nb ? "USER_BANNED" : "USER_UNBANNED", detail: `User ${u.email} was ${nb ? "banned" : "unbanned"} by admin.` });
+      setUsers((p) => p.map((x) => x.id === u.id ? { ...x, is_banned: nb } : x));
+      if (selectedUser?.id === u.id) setSelectedUser((s) => s ? { ...s, is_banned: nb } : s);
+    }
     setActionLoading(null);
   }
 
@@ -479,92 +565,210 @@ function UsersTab() {
         </div>
       </div>
 
-      {/* Table */}
-      <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e8e0d8", overflow: "hidden" }}>
-        {loading ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4rem", color: "#888", gap: "0.5rem" }}>
-            <RefreshCw style={{ width: "20px", height: "20px", animation: "spin 1s linear infinite" }} /> Loading users…
-          </div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: "4rem", textAlign: "center", color: "#888" }}>No users found.</div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
-              <thead>
-                <tr style={{ background: "#faf8f5", borderBottom: "1px solid #e8e0d8" }}>
-                  {["User", "Joined", "Status", "Role", "Actions"].map((h) => (
-                    <th key={h} style={{ padding: "0.85rem 1.25rem", textAlign: h === "Actions" ? "right" : "left", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#888" }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((u, i) => (
-                  <tr key={u.id} style={{ borderBottom: i < filtered.length - 1 ? "1px solid #f0ece6" : "none", opacity: u.is_banned ? 0.6 : 1 }}>
-                    {/* User */}
-                    <td style={{ padding: "1rem 1.25rem" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        <div style={{ width: "38px", height: "38px", borderRadius: "50%", background: "linear-gradient(135deg, #d4a857, #b8872a)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.9rem", fontWeight: 700, color: "#1a0a0a", flexShrink: 0 }}>
-                          {(u.full_name || u.email || "?")[0].toUpperCase()}
+      <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: selectedUser ? "1fr 360px" : "1fr" }}>
+        {/* Table */}
+        <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e8e0d8", overflow: "hidden" }}>
+          <p style={{ margin: "0.6rem 1.25rem", fontSize: "0.72rem", color: "#aaa" }}>Click on a user row to view full details</p>
+          {loading ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4rem", color: "#888", gap: "0.5rem" }}>
+              <RefreshCw style={{ width: "20px", height: "20px", animation: "spin 1s linear infinite" }} /> Loading users…
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: "4rem", textAlign: "center", color: "#888" }}>No users found.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+                <thead>
+                  <tr style={{ background: "#faf8f5", borderBottom: "1px solid #e8e0d8" }}>
+                    {["User", "Joined", "Status", "Role", "Action"].map((h) => (
+                      <th key={h} style={{ padding: "0.85rem 1.25rem", textAlign: h === "Action" ? "right" : "left", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#888" }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((u, i) => (
+                    <tr
+                      key={u.id}
+                      onClick={() => openUser(u)}
+                      style={{
+                        borderBottom: i < filtered.length - 1 ? "1px solid #f0ece6" : "none",
+                        opacity: u.is_banned ? 0.7 : 1,
+                        cursor: "pointer",
+                        background: selectedUser?.id === u.id ? "#fdf5f5" : "#fff",
+                        transition: "background 0.12s",
+                      }}
+                    >
+                      {/* User */}
+                      <td style={{ padding: "1rem 1.25rem" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                          <div style={{ width: "38px", height: "38px", borderRadius: "50%", background: "linear-gradient(135deg, #d4a857, #b8872a)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.9rem", fontWeight: 700, color: "#1a0a0a", flexShrink: 0 }}>
+                            {(u.full_name || u.email || "?")[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, color: "#1a0a0a" }}>{u.full_name || "—"}</div>
+                            <div style={{ fontSize: "0.75rem", color: "#888" }}>{u.email}</div>
+                          </div>
                         </div>
-                        <div>
-                          <div style={{ fontWeight: 600, color: "#1a0a0a" }}>{u.full_name || "—"}</div>
-                          <div style={{ fontSize: "0.75rem", color: "#888" }}>{u.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    {/* Joined */}
-                    <td style={{ padding: "1rem 1.25rem", fontSize: "0.78rem", color: "#888" }}>
-                      {new Date(u.created_at).toLocaleDateString("en-NP", { year: "numeric", month: "short", day: "numeric" })}
-                    </td>
-                    {/* Status */}
-                    <td style={{ padding: "1rem 1.25rem" }}>
-                      {u.is_banned ? (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "#FEE2E2", color: "#DC2626", borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 700 }}>
-                          <Ban style={{ width: "11px", height: "11px" }} /> Banned
-                        </span>
-                      ) : (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "#DCFCE7", color: "#16A34A", borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 700 }}>
-                          <CheckCircle2 style={{ width: "11px", height: "11px" }} /> Active
-                        </span>
-                      )}
-                    </td>
-                    {/* Role */}
-                    <td style={{ padding: "1rem 1.25rem" }}>
-                      {u.is_admin ? (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "#FEF3C7", color: "#D97706", borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 700 }}>
-                          <ShieldCheck style={{ width: "11px", height: "11px" }} /> Admin
-                        </span>
-                      ) : (
-                        <span style={{ background: "#F3EDE5", color: "#888", borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 600 }}>
-                          User
-                        </span>
-                      )}
-                    </td>
-                    {/* Actions */}
-                    <td style={{ padding: "1rem 1.25rem", textAlign: "right" }}>
-                      <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+                      </td>
+                      {/* Joined */}
+                      <td style={{ padding: "1rem 1.25rem", fontSize: "0.78rem", color: "#888" }}>
+                        {new Date(u.created_at).toLocaleDateString("en-NP", { year: "numeric", month: "short", day: "numeric" })}
+                      </td>
+                      {/* Status */}
+                      <td style={{ padding: "1rem 1.25rem" }}>
+                        {u.is_banned ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "#FEE2E2", color: "#DC2626", borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 700 }}>
+                            <Ban style={{ width: "11px", height: "11px" }} /> Banned
+                          </span>
+                        ) : (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "#DCFCE7", color: "#16A34A", borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 700 }}>
+                            <CheckCircle2 style={{ width: "11px", height: "11px" }} /> Active
+                          </span>
+                        )}
+                      </td>
+                      {/* Role */}
+                      <td style={{ padding: "1rem 1.25rem" }}>
+                        {u.is_admin ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "#FEF3C7", color: "#D97706", borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 700 }}>
+                            <ShieldCheck style={{ width: "11px", height: "11px" }} /> Admin
+                          </span>
+                        ) : (
+                          <span style={{ background: "#F3EDE5", color: "#888", borderRadius: "999px", padding: "0.3rem 0.75rem", fontSize: "0.72rem", fontWeight: 600 }}>
+                            User
+                          </span>
+                        )}
+                      </td>
+                      {/* Ban action */}
+                      <td style={{ padding: "1rem 1.25rem", textAlign: "right" }}>
                         <button
-                          onClick={() => toggleBan(u)}
+                          onClick={(e) => { e.stopPropagation(); toggleBan(u); }}
                           disabled={actionLoading === u.id}
                           style={{ padding: "0.4rem 0.85rem", borderRadius: "8px", border: "none", fontSize: "0.78rem", fontWeight: 600, cursor: "pointer", background: u.is_banned ? "#DCFCE7" : "#FEE2E2", color: u.is_banned ? "#16A34A" : "#DC2626", opacity: actionLoading === u.id ? 0.5 : 1 }}
                         >
                           {actionLoading === u.id ? "…" : u.is_banned ? "Unban" : "Ban"}
                         </button>
-                        <button
-                          onClick={() => toggleAdmin(u)}
-                          disabled={actionLoading === u.id + "-admin"}
-                          style={{ padding: "0.4rem 0.85rem", borderRadius: "8px", border: "none", fontSize: "0.78rem", fontWeight: 600, cursor: "pointer", background: u.is_admin ? "#F3EDE5" : "#FEF3C7", color: u.is_admin ? "#888" : "#D97706", opacity: actionLoading === u.id + "-admin" ? 0.5 : 1 }}
-                        >
-                          {actionLoading === u.id + "-admin" ? "…" : u.is_admin ? "Revoke Admin" : "Make Admin"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* User detail panel */}
+        {selectedUser && (
+          <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e8e0d8", padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem", alignSelf: "start", position: "sticky", top: "80px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <h3 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: "1.1rem", fontWeight: 700, color: "#1a0a0a", margin: 0 }}>User Details</h3>
+              <button onClick={() => setSelectedUser(null)} style={{ background: "none", border: "none", color: "#bbb", cursor: "pointer", padding: 0 }}>
+                <X style={{ width: "18px", height: "18px" }} />
+              </button>
+            </div>
+
+            {/* Avatar + name */}
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+              <div style={{ width: "56px", height: "56px", borderRadius: "50%", background: "linear-gradient(135deg, #d4a857, #b8872a)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem", fontWeight: 700, color: "#1a0a0a", flexShrink: 0 }}>
+                {(selectedUser.full_name || selectedUser.email || "?")[0].toUpperCase()}
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "1rem", color: "#1a0a0a" }}>{selectedUser.full_name || "No name"}</div>
+                <div style={{ fontSize: "0.78rem", color: "#888", marginTop: "0.1rem" }}>{selectedUser.email}</div>
+                <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
+                  {selectedUser.is_admin && (
+                    <span style={{ background: "#FEF3C7", color: "#D97706", borderRadius: "999px", padding: "0.2rem 0.6rem", fontSize: "0.68rem", fontWeight: 700 }}>Admin</span>
+                  )}
+                  {selectedUser.is_banned && (
+                    <span style={{ background: "#FEE2E2", color: "#DC2626", borderRadius: "999px", padding: "0.2rem 0.6rem", fontSize: "0.68rem", fontWeight: 700 }}>Banned</span>
+                  )}
+                  {!selectedUser.is_admin && !selectedUser.is_banned && (
+                    <span style={{ background: "#DCFCE7", color: "#16A34A", borderRadius: "999px", padding: "0.2rem 0.6rem", fontSize: "0.68rem", fontWeight: 700 }}>Active</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Info rows */}
+            <div style={{ background: "#faf8f5", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem", fontSize: "0.82rem" }}>
+              {selectedUser.phone && (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <Phone style={{ width: "13px", height: "13px", color: "#999", flexShrink: 0 }} />
+                  <span style={{ color: "#444" }}>+977-{selectedUser.phone}</span>
+                </div>
+              )}
+              {selectedUser.location && (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <MapPin style={{ width: "13px", height: "13px", color: "#999", flexShrink: 0 }} />
+                  <span style={{ color: "#444" }}>{selectedUser.location}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Clock style={{ width: "13px", height: "13px", color: "#999", flexShrink: 0 }} />
+                <span style={{ color: "#888" }}>Joined {new Date(selectedUser.created_at).toLocaleDateString("en-NP", { year: "numeric", month: "long", day: "numeric" })}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Mail style={{ width: "13px", height: "13px", color: "#999", flexShrink: 0 }} />
+                <a href={`mailto:${selectedUser.email}`} style={{ color: "#c0392b", textDecoration: "none" }}>{selectedUser.email}</a>
+              </div>
+            </div>
+
+            {detailLoading ? (
+              <div style={{ textAlign: "center", color: "#aaa", fontSize: "0.82rem", padding: "1rem" }}>Loading details…</div>
+            ) : (
+              <>
+                {/* Listings */}
+                <div>
+                  <div style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#aaa", marginBottom: "0.6rem" }}>
+                    Recent Listings ({selectedUser._listingCount ?? 0})
+                  </div>
+                  {(selectedUser._listings ?? []).length === 0 ? (
+                    <p style={{ fontSize: "0.8rem", color: "#ccc", margin: 0 }}>No listings</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                      {(selectedUser._listings ?? []).map((l) => (
+                        <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#faf8f5", borderRadius: "8px", padding: "0.5rem 0.75rem", fontSize: "0.78rem" }}>
+                          <span style={{ color: "#444", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+                            <span style={{ fontWeight: 700, color: "#c0392b" }}>Rs {l.price.toLocaleString()}</span>
+                            {l.is_sold && <span style={{ background: "#FEE2E2", color: "#DC2626", borderRadius: "4px", padding: "0.1rem 0.4rem", fontSize: "0.65rem", fontWeight: 700 }}>SOLD</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Orders */}
+                <div>
+                  <div style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#aaa", marginBottom: "0.6rem" }}>
+                    Recent Orders ({selectedUser._orderCount ?? 0})
+                  </div>
+                  {(selectedUser._orders ?? []).length === 0 ? (
+                    <p style={{ fontSize: "0.8rem", color: "#ccc", margin: 0 }}>No orders</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                      {(selectedUser._orders ?? []).map((o) => (
+                        <div key={o.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#faf8f5", borderRadius: "8px", padding: "0.5rem 0.75rem", fontSize: "0.78rem" }}>
+                          <span style={{ color: "#444", maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.listing_title}</span>
+                          <div style={{ display: "flex", gap: "0.4rem", flexShrink: 0, alignItems: "center" }}>
+                            <span style={{ fontWeight: 700, color: "#c0392b" }}>Rs {o.total.toLocaleString()}</span>
+                            <span style={{
+                              borderRadius: "4px", padding: "0.1rem 0.4rem", fontSize: "0.65rem", fontWeight: 700,
+                              background: o.status === "completed" ? "#DCFCE7" : o.status === "cancelled" ? "#FEE2E2" : "#FEF3C7",
+                              color: o.status === "completed" ? "#16A34A" : o.status === "cancelled" ? "#DC2626" : "#D97706",
+                            }}>
+                              {o.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -590,14 +794,16 @@ type Listing = {
 };
 
 function ProductsTab() {
-  const [listings, setListings]       = useState<Listing[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [search, setSearch]           = useState("");
-  const [filter, setFilter]           = useState<"all" | "active" | "sold" | "inactive">("all");
+  const [listings, setListings]           = useState<Listing[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [search, setSearch]               = useState("");
+  const [filter, setFilter]               = useState<"all" | "active" | "sold" | "inactive">("all");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError]     = useState("");
 
   async function loadListings() {
     setLoading(true);
+    setActionError("");
     const { data } = await supabase.from("listings").select("*").order("posted_at", { ascending: false });
     setListings((data as Listing[]) ?? []);
     setLoading(false);
@@ -607,23 +813,29 @@ function ProductsTab() {
 
   async function toggleSold(l: Listing) {
     setActionLoading(l.id + "-sold");
-    await supabase.from("listings").update({ is_sold: !l.is_sold }).eq("id", l.id);
-    setListings(p => p.map(x => x.id === l.id ? { ...x, is_sold: !l.is_sold } : x));
+    setActionError("");
+    const { error } = await supabase.rpc("admin_update_listing", { p_id: l.id, p_is_sold: !l.is_sold });
+    if (error) setActionError("Failed: " + error.message);
+    else setListings(p => p.map(x => x.id === l.id ? { ...x, is_sold: !l.is_sold } : x));
     setActionLoading(null);
   }
 
   async function toggleActive(l: Listing) {
     setActionLoading(l.id + "-active");
-    await supabase.from("listings").update({ is_active: !l.is_active }).eq("id", l.id);
-    setListings(p => p.map(x => x.id === l.id ? { ...x, is_active: !l.is_active } : x));
+    setActionError("");
+    const { error } = await supabase.rpc("admin_update_listing", { p_id: l.id, p_is_active: !l.is_active });
+    if (error) setActionError("Failed: " + error.message);
+    else setListings(p => p.map(x => x.id === l.id ? { ...x, is_active: !l.is_active } : x));
     setActionLoading(null);
   }
 
   async function deleteListing(l: Listing) {
     if (!confirm(`Delete "${l.title}"? This cannot be undone.`)) return;
     setActionLoading(l.id + "-del");
-    await supabase.from("listings").delete().eq("id", l.id);
-    setListings(p => p.filter(x => x.id !== l.id));
+    setActionError("");
+    const { error } = await supabase.rpc("admin_delete_listing", { p_id: l.id });
+    if (error) setActionError("Failed: " + error.message);
+    else setListings(p => p.filter(x => x.id !== l.id));
     setActionLoading(null);
   }
 
@@ -645,6 +857,12 @@ function ProductsTab() {
           <RefreshCw style={{ width: "14px", height: "14px" }} /> Refresh
         </button>
       </div>
+
+      {actionError && (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.82rem", color: "#DC2626" }}>
+          <AlertCircle style={{ width: "15px", height: "15px", flexShrink: 0 }} /> {actionError}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
         <div style={{ position: "relative", flex: "1", minWidth: "200px" }}>
@@ -772,14 +990,16 @@ type Order = {
 };
 
 function AdminOrdersTab() {
-  const [orders, setOrders]   = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter]   = useState<"all" | "pending" | "confirmed" | "completed" | "cancelled">("all");
-  const [selected, setSelected] = useState<Order | null>(null);
+  const [orders, setOrders]         = useState<Order[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [filter, setFilter]         = useState<"all" | "pending" | "confirmed" | "completed" | "cancelled">("all");
+  const [selected, setSelected]     = useState<Order | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState("");
 
   async function loadOrders() {
     setLoading(true);
+    setUpdateError("");
     const { data } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
     setOrders((data as Order[]) ?? []);
     setLoading(false);
@@ -789,9 +1009,14 @@ function AdminOrdersTab() {
 
   async function updateStatus(o: Order, status: string) {
     setUpdatingId(o.id);
-    await supabase.from("orders").update({ status, updated_at: new Date().toISOString() }).eq("id", o.id);
-    setOrders(p => p.map(x => x.id === o.id ? { ...x, status } : x));
-    if (selected?.id === o.id) setSelected({ ...o, status });
+    setUpdateError("");
+    const { error } = await supabase.rpc("admin_update_order_status", { p_id: o.id, p_status: status });
+    if (error) {
+      setUpdateError("Update failed: " + error.message);
+    } else {
+      setOrders(p => p.map(x => x.id === o.id ? { ...x, status } : x));
+      if (selected?.id === o.id) setSelected({ ...o, status });
+    }
     setUpdatingId(null);
   }
 
@@ -955,21 +1180,26 @@ function AdminOrdersTab() {
             {/* Status actions */}
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               <p style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#999", margin: 0 }}>Update Status</p>
+              {updateError && (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "0.5rem 0.75rem", fontSize: "0.78rem", color: "#DC2626" }}>
+                  <AlertCircle style={{ width: "13px", height: "13px", flexShrink: 0 }} /> {updateError}
+                </div>
+              )}
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                 {nextStatus[selected.status] && (
-                  <button onClick={() => updateStatus(selected, nextStatus[selected.status])} disabled={updatingId === selected.id}
+                  <button onClick={() => updateStatus(selected, nextStatus[selected.status])} disabled={!!updatingId}
                     style={{ padding: "0.5rem 1rem", borderRadius: "8px", border: "none", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", background: "#DBEAFE", color: "#2563EB", opacity: updatingId ? 0.5 : 1 }}>
                     Mark {nextStatus[selected.status].charAt(0).toUpperCase() + nextStatus[selected.status].slice(1)}
                   </button>
                 )}
                 {selected.status !== "cancelled" && selected.status !== "completed" && (
-                  <button onClick={() => updateStatus(selected, "cancelled")} disabled={updatingId === selected.id}
+                  <button onClick={() => updateStatus(selected, "cancelled")} disabled={!!updatingId}
                     style={{ padding: "0.5rem 1rem", borderRadius: "8px", border: "none", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", background: "#FEE2E2", color: "#DC2626", opacity: updatingId ? 0.5 : 1 }}>
                     Cancel Order
                   </button>
                 )}
                 {selected.status === "cancelled" && (
-                  <button onClick={() => updateStatus(selected, "pending")} disabled={updatingId === selected.id}
+                  <button onClick={() => updateStatus(selected, "pending")} disabled={!!updatingId}
                     style={{ padding: "0.5rem 1rem", borderRadius: "8px", border: "none", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", background: "#FFFBEB", color: "#D97706", opacity: updatingId ? 0.5 : 1 }}>
                     Reopen as Pending
                   </button>
@@ -1002,7 +1232,8 @@ function MessagesTab() {
 
   async function openMessage(msg: ContactMessage) {
     if (!msg.is_read) {
-      await supabase.from("contact_messages").update({ is_read: true }).eq("id", msg.id);
+      // Use RPC — direct update blocked by RLS for non-owners
+      await supabase.rpc("admin_mark_message_read", { p_id: msg.id });
       setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, is_read: true } : m));
       setSelected({ ...msg, is_read: true });
     } else {
@@ -1113,84 +1344,3 @@ function MessagesTab() {
   );
 }
 
-/* ─── Activity Log ───────────────────────────────────────────────── */
-function ActivityTab() {
-  const [logs, setLogs]     = useState<ActivityLog[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  async function loadLogs() {
-    setLoading(true);
-    const { data } = await supabase
-      .from("activity_logs")
-      .select("*, profiles(full_name, email)")
-      .order("created_at", { ascending: false })
-      .limit(200);
-    setLogs((data as ActivityLog[]) ?? []);
-    setLoading(false);
-  }
-
-  useEffect(() => { loadLogs(); }, []);
-
-  const tagStyle: Record<string, { bg: string; color: string }> = {
-    USER_BANNED:     { bg: "#FEE2E2", color: "#DC2626" },
-    USER_UNBANNED:   { bg: "#DCFCE7", color: "#16A34A" },
-    ADMIN_GRANTED:   { bg: "#FEF3C7", color: "#D97706" },
-    ADMIN_REVOKED:   { bg: "#F3EDE5", color: "#888"    },
-    USER_SIGNUP:     { bg: "#DBEAFE", color: "#2563EB" },
-    USER_LOGIN:      { bg: "#EDE9FE", color: "#7C3AED" },
-    LISTING_CREATED: { bg: "#D1FAE5", color: "#059669" },
-  };
-
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
-        <h2 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: "1.4rem", fontWeight: 700, color: "#1a0a0a", margin: 0 }}>
-          Activity Log
-        </h2>
-        <button onClick={loadLogs} style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: "#fff", border: "1px solid #e8e0d8", borderRadius: "10px", padding: "0.5rem 1rem", fontSize: "0.82rem", fontWeight: 600, color: "#444", cursor: "pointer" }}>
-          <RefreshCw style={{ width: "14px", height: "14px" }} /> Refresh
-        </button>
-      </div>
-
-      <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e8e0d8", overflow: "hidden" }}>
-        {loading ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4rem", color: "#888", gap: "0.5rem" }}>
-            <RefreshCw style={{ width: "20px", height: "20px", animation: "spin 1s linear infinite" }} /> Loading activity…
-          </div>
-        ) : logs.length === 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem", padding: "4rem", textAlign: "center", color: "#bbb" }}>
-            <Activity style={{ width: "40px", height: "40px", opacity: 0.35 }} />
-            <p style={{ margin: 0 }}>No activity logged yet.</p>
-          </div>
-        ) : (
-          <div>
-            {logs.map((log, i) => {
-              const ts = tagStyle[log.action] ?? { bg: "#F3EDE5", color: "#888" };
-              return (
-                <div key={log.id} style={{ display: "flex", alignItems: "flex-start", gap: "1rem", padding: "1rem 1.5rem", borderBottom: i < logs.length - 1 ? "1px solid #f0ece6" : "none" }}>
-                  <span style={{ display: "inline-flex", alignItems: "center", borderRadius: "8px", padding: "0.3rem 0.65rem", fontSize: "0.65rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", background: ts.bg, color: ts.color, flexShrink: 0, marginTop: "0.1rem" }}>
-                    {log.action.replace(/_/g, " ")}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: "0.875rem", color: "#1a0a0a" }}>{log.detail}</p>
-                    <div style={{ display: "flex", gap: "1rem", marginTop: "0.3rem", fontSize: "0.75rem", color: "#999" }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                        <Eye style={{ width: "12px", height: "12px" }} />
-                        {log.profiles?.full_name || log.profiles?.email || "System"}
-                      </span>
-                      <span style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                        <Clock style={{ width: "12px", height: "12px" }} />
-                        {new Date(log.created_at).toLocaleString("en-NP")}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
-}

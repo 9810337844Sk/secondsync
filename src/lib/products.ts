@@ -20,14 +20,18 @@ export type Product = {
 };
 
 export const categories = [
-  { slug: "all",         name: "All",         np: "सबै"              },
-  { slug: "electronics", name: "Electronics", np: "इलेक्ट्रोनिक्स" },
-  { slug: "vehicles",    name: "Vehicles",    np: "सवारी"            },
-  { slug: "books",       name: "Books",       np: "किताब"            },
-  { slug: "furniture",   name: "Furniture",   np: "फर्निचर"         },
-  { slug: "fashion",     name: "Fashion",     np: "लुगा"             },
-  { slug: "antiques",    name: "Antiques",    np: "पुरातन"           },
+  { slug: "all",         name: "All",          np: "सबै"              },
+  { slug: "electronics", name: "Electronics",  np: "इलेक्ट्रोनिक्स" },
+  { slug: "mobiles",     name: "Mobiles",      np: "मोबाइल"          },
+  { slug: "vehicles",    name: "Vehicles",     np: "सवारी"            },
+  { slug: "fashion",     name: "Fashion",      np: "लुगा"             },
+  { slug: "furniture",   name: "Furniture",    np: "फर्निचर"         },
+  { slug: "books",       name: "Books",        np: "किताब"            },
+  { slug: "sports",      name: "Sports",       np: "खेलकुद"           },
+  { slug: "antiques",    name: "Antiques",     np: "पुरातन"           },
 ];
+
+export const VALLEY_DISTRICTS = ["Kathmandu", "Lalitpur", "Bhaktapur"] as const;
 
 export const CONDITIONS = ["Like New", "Excellent", "Good", "Fair"] as const;
 

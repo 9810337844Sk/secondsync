@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { Mail, MapPin, Phone, CheckCircle2, Loader2 } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
+import { Mail, MapPin, Phone, CheckCircle2, Loader2, Home } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/contact")({
@@ -15,31 +15,52 @@ export const Route = createFileRoute("/contact")({
 });
 
 function Contact() {
+  const navigate = useNavigate();
   const [sent, setSent]       = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
+  const [countdown, setCountdown] = useState(4);
 
   const [name, setName]       = useState("");
   const [email, setEmail]     = useState("");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
 
+  useEffect(() => {
+    if (!sent) return;
+    const interval = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          clearInterval(interval);
+          navigate({ to: "/" });
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [sent, navigate]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const { error: dbError } = await supabase.from("contact_messages").insert({
-      name,
-      email,
-      subject,
-      message,
-      created_at: new Date().toISOString(),
-    });
-    setLoading(false);
-    if (dbError) {
-      setError("Failed to send. Please email us directly at teamkalpantrix@gmail.com");
-    } else {
-      setSent(true);
+    try {
+      const { error: dbError } = await supabase.from("contact_messages").insert({
+        name,
+        email,
+        subject,
+        message,
+      });
+      if (dbError) {
+        setError(`Failed to send message. Please email us directly at teamkalpantrix@gmail.com`);
+      } else {
+        setSent(true);
+      }
+    } catch {
+      setError("Network error. Please email us directly at teamkalpantrix@gmail.com");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -98,14 +119,25 @@ function Contact() {
               <CheckCircle2 className="mx-auto h-12 w-12 text-crimson" />
               <h2 className="mt-4 font-display text-2xl font-bold text-ink">Dhanyabad! 🙏</h2>
               <p className="mt-2 text-muted-foreground">
-                Your message has been saved. We'll get back to you within 24 hours.
+                Your message has been sent. We'll get back to you within 24 hours.
               </p>
-              <button
-                onClick={() => { setSent(false); setName(""); setEmail(""); setSubject(""); setMessage(""); }}
-                className="mt-6 rounded-full border border-border bg-card px-5 py-2 text-sm font-semibold text-ink hover:border-crimson"
-              >
-                Send another message
-              </button>
+              <p className="mt-2 text-sm text-muted-foreground/60">
+                Redirecting you to home in {countdown}s…
+              </p>
+              <div className="mt-6 flex justify-center gap-3">
+                <button
+                  onClick={() => navigate({ to: "/" })}
+                  className="inline-flex items-center gap-2 rounded-full bg-crimson px-5 py-2 text-sm font-semibold text-paper hover:opacity-90 transition-opacity"
+                >
+                  <Home className="h-4 w-4" /> Go to Home
+                </button>
+                <button
+                  onClick={() => { setSent(false); setCountdown(4); setName(""); setEmail(""); setSubject(""); setMessage(""); }}
+                  className="rounded-full border border-border bg-card px-5 py-2 text-sm font-semibold text-ink hover:border-crimson transition-colors"
+                >
+                  Send another
+                </button>
+              </div>
             </div>
           ) : (
             <form

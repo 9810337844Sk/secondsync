@@ -25,6 +25,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProductIdRouteImport } from './routes/product.$id'
+import { Route as CategorySlugRouteImport } from './routes/category.$slug'
 
 const VerifyRoute = VerifyRouteImport.update({
   id: '/verify',
@@ -106,6 +107,11 @@ const ProductIdRoute = ProductIdRouteImport.update({
   path: '/product/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CategorySlugRoute = CategorySlugRouteImport.update({
+  id: '/category/$slug',
+  path: '/category/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -123,6 +129,7 @@ export interface FileRoutesByFullPath {
   '/sell': typeof SellRoute
   '/team': typeof TeamRoute
   '/verify': typeof VerifyRoute
+  '/category/$slug': typeof CategorySlugRoute
   '/product/$id': typeof ProductIdRoute
 }
 export interface FileRoutesByTo {
@@ -141,6 +148,7 @@ export interface FileRoutesByTo {
   '/sell': typeof SellRoute
   '/team': typeof TeamRoute
   '/verify': typeof VerifyRoute
+  '/category/$slug': typeof CategorySlugRoute
   '/product/$id': typeof ProductIdRoute
 }
 export interface FileRoutesById {
@@ -160,6 +168,7 @@ export interface FileRoutesById {
   '/sell': typeof SellRoute
   '/team': typeof TeamRoute
   '/verify': typeof VerifyRoute
+  '/category/$slug': typeof CategorySlugRoute
   '/product/$id': typeof ProductIdRoute
 }
 export interface FileRouteTypes {
@@ -180,6 +189,7 @@ export interface FileRouteTypes {
     | '/sell'
     | '/team'
     | '/verify'
+    | '/category/$slug'
     | '/product/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -198,6 +208,7 @@ export interface FileRouteTypes {
     | '/sell'
     | '/team'
     | '/verify'
+    | '/category/$slug'
     | '/product/$id'
   id:
     | '__root__'
@@ -216,6 +227,7 @@ export interface FileRouteTypes {
     | '/sell'
     | '/team'
     | '/verify'
+    | '/category/$slug'
     | '/product/$id'
   fileRoutesById: FileRoutesById
 }
@@ -235,6 +247,7 @@ export interface RootRouteChildren {
   SellRoute: typeof SellRoute
   TeamRoute: typeof TeamRoute
   VerifyRoute: typeof VerifyRoute
+  CategorySlugRoute: typeof CategorySlugRoute
   ProductIdRoute: typeof ProductIdRoute
 }
 
@@ -352,6 +365,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/category/$slug': {
+      id: '/category/$slug'
+      path: '/category/$slug'
+      fullPath: '/category/$slug'
+      preLoaderRoute: typeof CategorySlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -371,6 +391,7 @@ const rootRouteChildren: RootRouteChildren = {
   SellRoute: SellRoute,
   TeamRoute: TeamRoute,
   VerifyRoute: VerifyRoute,
+  CategorySlugRoute: CategorySlugRoute,
   ProductIdRoute: ProductIdRoute,
 }
 export const routeTree = rootRouteImport

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import {
   ArrowLeft, MapPin, Clock, ChevronLeft, ChevronRight,
   CheckCircle2, Trash2, Tag, ShoppingBag, Package,
-  CreditCard, Loader2, Shield, Truck, X,
+  Loader2, Shield, Truck, X,
   BadgeCheck, AlertCircle, TrendingUp, Zap,
 } from "lucide-react";
 import { formatNpr, timeAgo, type Product } from "@/lib/products";
@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { recordView, getSimilarListings, getPersonalizedRecommendations } from "@/lib/recommendations";
 import { DamageAnalyzer } from "@/components/site/DamageAnalyzer";
-import { esewaSign, khaltiInitiate } from "@/lib/payment.server";
+import { esewaSign, khaltiInitiate, esewaSimulateDev } from "@/lib/payment.server";
 
 export const Route = createFileRoute("/product/$id")({
   head: () => ({ meta: [{ title: "Listing — Second Sync" }] }),
@@ -63,6 +63,79 @@ function DamageAnalyzerFromUrl({ imageUrl }: { imageUrl: string }) {
 }
 
 /* ─────────────────────────────────────────────────────────────── */
+/* Brand Logos                                                      */
+/* ─────────────────────────────────────────────────────────────── */
+function EsewaLogo({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        gap: "3px",
+        width: compact ? "48px" : "64px",
+        height: compact ? "26px" : "34px",
+        borderRadius: "8px",
+        background: "linear-gradient(135deg, #6dcf3e 0%, #4aab1a 100%)",
+        padding: "0 8px",
+        boxShadow: "0 2px 8px rgba(96,187,70,0.35)",
+      }}
+    >
+      <span style={{ color: "white", fontSize: compact ? "15px" : "20px", fontWeight: 900, lineHeight: 1, fontFamily: "Arial, sans-serif" }}>e</span>
+      <span style={{ color: "white", fontSize: compact ? "9px" : "11px", fontWeight: 700, letterSpacing: "-0.2px", fontFamily: "Arial, sans-serif" }}>Sewa</span>
+    </div>
+  );
+}
+
+function KhaltiLogo({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        gap: "3px",
+        width: compact ? "48px" : "64px",
+        height: compact ? "26px" : "34px",
+        borderRadius: "8px",
+        background: "linear-gradient(135deg, #6d35b0 0%, #4a1f85 100%)",
+        padding: "0 8px",
+        boxShadow: "0 2px 8px rgba(92,45,145,0.35)",
+      }}
+    >
+      {/* Stylised diamond dot */}
+      <svg width={compact ? "8" : "10"} height={compact ? "8" : "10"} viewBox="0 0 10 10" fill="none">
+        <rect x="2" y="2" width="6" height="6" rx="1.5" fill="white" transform="rotate(45 5 5)"/>
+      </svg>
+      <span style={{ color: "white", fontSize: compact ? "9px" : "11px", fontWeight: 700, letterSpacing: "-0.2px", fontFamily: "Arial, sans-serif" }}>khalti</span>
+    </div>
+  );
+}
+
+function PathaoLogo({ size = 40 }: { size?: number }) {
+  return (
+    <div
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "2px",
+        width: size, height: size, borderRadius: "10px",
+        background: "linear-gradient(135deg, #f04040 0%, #c0251a 100%)",
+        boxShadow: "0 2px 8px rgba(232,59,63,0.4)",
+      }}
+    >
+      {/* Motorbike icon */}
+      <svg viewBox="0 0 20 14" fill="none" style={{ width: "18px", height: "13px" }}>
+        {/* Rear wheel */}
+        <circle cx="3.5" cy="10.5" r="3" stroke="white" strokeWidth="1.6"/>
+        {/* Front wheel */}
+        <circle cx="16.5" cy="10.5" r="3" stroke="white" strokeWidth="1.6"/>
+        {/* Body */}
+        <path d="M3.5 10.5 L6 7 L9.5 7 L11.5 4 L15 4 L16.5 10.5 M9.5 7 L11 10.5" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        {/* Rider handlebar */}
+        <path d="M14.5 4 L16 2.5" stroke="white" strokeWidth="1.3" strokeLinecap="round"/>
+      </svg>
+      <span style={{ color: "white", fontSize: "8px", fontWeight: 800, letterSpacing: "0.3px", fontFamily: "Arial, sans-serif", lineHeight: 1 }}>PATHAO</span>
+    </div>
+  );
+}
+
+
+/* ─────────────────────────────────────────────────────────────── */
 /* Inline Order Panel (replaces modal)                             */
 /* ─────────────────────────────────────────────────────────────── */
 type OrderStep = "form" | "placed";
@@ -76,7 +149,7 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
   const [buyerPhone, setBuyerPhone] = useState(profile?.phone ?? "");
   const [address, setAddress]     = useState("");
   const [delivery, setDelivery]   = useState<"pickup" | "pathao" | "bus">("pickup");
-  const [payment, setPayment]     = useState<"cash" | "esewa" | "khalti">("cash");
+  const [payment, setPayment]     = useState<"esewa" | "khalti">("esewa");
   const [note, setNote]           = useState("");
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState("");
@@ -122,8 +195,7 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         payment,
         note:             note || null,
         total,
-        // cash orders are immediately confirmed; online payments stay pending until verified
-        status: payment === "cash" ? "confirmed" : "pending",
+        status: "pending",
       });
 
     if (orderErr) {
@@ -132,39 +204,23 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
       return;
     }
 
-    // ── Cash on meet: mark sold + notify + done ─────────────────
-    if (payment === "cash") {
-      await supabase.from("listings").update({ is_sold: true }).eq("id", product.id);
-      await supabase.from("contact_messages").insert({
-        name:    buyerName,
-        email:   user.email ?? "",
-        subject: `🛒 New Order: ${product.title}`,
-        message: [
-          `New order received for your listing!`,
-          ``,
-          `Item: ${product.title}`,
-          `Buyer: ${buyerName} | +977-${buyerPhone}`,
-          `Delivery: ${delivery}${deliveryCost > 0 ? ` (+Rs ${deliveryCost})` : " (Free)"}`,
-          address ? `Address: ${address}` : "",
-          `Payment: CASH ON MEET`,
-          `Total: Rs ${formatNpr(total)}`,
-          note ? `Note: ${note}` : "",
-        ].filter(Boolean).join("\n"),
-      });
-      await supabase.from("activity_logs").insert({
-        user_id: user.id,
-        action:  "ORDER_PLACED",
-        detail:  `${buyerName} ordered "${product.title}" for Rs ${formatNpr(total)}.`,
-      });
-      setLoading(false);
-      setStep("placed");
-      return;
-    }
-
-    // ── eSewa: generate signature → submit hidden form ──────────
+    // ── eSewa ──────────────────────────────────────────────────────
     if (payment === "esewa") {
       try {
-        const origin = window.location.origin;
+        const origin    = window.location.origin;
+        const isLocalDev = origin.includes("localhost") || origin.includes("127.0.0.1");
+
+        if (isLocalDev) {
+          // eSewa RC sandbox is unreliable locally — use a signed dev
+          // simulator that goes through the real verify/confirm pipeline.
+          const { encodedData } = await esewaSimulateDev({
+            data: { orderId, totalAmount: total },
+          });
+          window.location.href = `${origin}/payment-success?data=${encodedData}`;
+          return;
+        }
+
+        // Production: real eSewa form POST
         const fields = await esewaSign({
           data: {
             transactionUuid: orderId,
@@ -178,7 +234,6 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         form.method = "POST";
         form.action = fields.action;
 
-        // esewaSign already returns amounts as strings — do NOT coerce again
         const params: Record<string, string> = {
           amount:                  fields.amount,
           tax_amount:              fields.tax_amount,
@@ -187,8 +242,7 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
           product_code:            fields.product_code,
           product_service_charge:  fields.product_service_charge,
           product_delivery_charge: fields.product_delivery_charge,
-          // eSewa appends &data=<encoded> to success_url
-          success_url: `${origin}/payment-success?gateway=esewa&order_id=${orderId}`,
+          success_url: `${origin}/payment-success`,
           failure_url: `${origin}/payment-cancel?order_id=${orderId}`,
           signed_field_names: fields.signed_field_names,
           signature:          fields.signature,
@@ -203,10 +257,10 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         }
 
         document.body.appendChild(form);
-        form.submit(); // navigates away — no need to setLoading(false)
+        form.submit();
       } catch (err: any) {
         setLoading(false);
-        setError("Could not initiate eSewa payment. Please try again.");
+        setError(err?.message ?? "eSewa payment failed. Please try again.");
       }
       return;
     }
@@ -220,14 +274,16 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
             orderId:    orderId,
             orderName:  product.title.slice(0, 100),
             amountNpr:  total,
-            returnUrl:  `${origin}/payment-success?gateway=khalti&order_id=${orderId}`,
+            // Khalti appends ?pidx=&status=&... — clean base URL avoids
+            // double-? issues. orderId recovered from purchase_order_id in lookup.
+            returnUrl:  `${origin}/payment-success`,
             websiteUrl: origin,
           },
         });
         window.location.href = paymentUrl;
       } catch (err: any) {
         setLoading(false);
-        setError("Could not initiate Khalti payment. Please try again.");
+        setError(err?.message ?? "Khalti payment initiation failed.");
       }
       return;
     }
@@ -303,22 +359,50 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         <div>
           <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Delivery Method</p>
           <div className="grid grid-cols-3 gap-2">
-            {([
-              { id: "pickup", label: "Self Pickup", fee: "Free",    icon: "🤝" },
-              { id: "pathao", label: "Pathao",      fee: "+Rs 200", icon: "🛵" },
-              { id: "bus",    label: "Bus/Cargo",   fee: "+Rs 150", icon: "🚌" },
-            ] as const).map(opt => (
-              <button key={opt.id} type="button" onClick={() => setDelivery(opt.id)}
-                className={`flex flex-col items-center rounded-xl border p-2.5 text-center text-xs transition-all ${
-                  delivery === opt.id
-                    ? "border-crimson bg-crimson/5 ring-1 ring-crimson/20"
-                    : "border-border hover:border-crimson/40 bg-paper"
-                }`}>
-                <span className="text-xl">{opt.icon}</span>
-                <span className={`mt-1 font-semibold ${delivery === opt.id ? "text-crimson" : "text-ink"}`}>{opt.label}</span>
-                <span className="text-muted-foreground">{opt.fee}</span>
-              </button>
-            ))}
+            {/* Self Pickup */}
+            <button type="button" onClick={() => setDelivery("pickup")}
+              className={`flex flex-col items-center rounded-xl border p-2.5 text-center text-xs transition-all ${
+                delivery === "pickup" ? "border-crimson bg-crimson/5 ring-1 ring-crimson/20" : "border-border hover:border-crimson/40 bg-paper"
+              }`}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:"40px", height:"40px", borderRadius:"10px", background:"linear-gradient(135deg,#22c55e,#16a34a)", boxShadow:"0 2px 8px rgba(34,197,94,0.35)" }}>
+                <svg viewBox="0 0 20 20" fill="none" style={{ width:"18px", height:"18px" }}>
+                  <path d="M10 1.5 C7.5 1.5 5.5 3.5 5.5 6 C5.5 9 10 13.5 10 13.5 C10 13.5 14.5 9 14.5 6 C14.5 3.5 12.5 1.5 10 1.5z" stroke="white" strokeWidth="1.5" fill="white" fillOpacity="0.25"/>
+                  <circle cx="10" cy="6" r="2" fill="white"/>
+                  <path d="M4 16 Q4 13.5 7 13 L10 13.5 L13 13 Q16 13.5 16 16" stroke="white" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                </svg>
+              </div>
+              <span className={`mt-1 font-semibold ${delivery === "pickup" ? "text-crimson" : "text-ink"}`}>Self Pickup</span>
+              <span className="text-muted-foreground text-[10px]">Free</span>
+            </button>
+
+            {/* Pathao */}
+            <button type="button" onClick={() => setDelivery("pathao")}
+              className={`flex flex-col items-center rounded-xl border p-2.5 text-center text-xs transition-all ${
+                delivery === "pathao" ? "border-[#E83B3F] bg-red-50 ring-1 ring-red-200" : "border-border hover:border-red-300 bg-paper"
+              }`}>
+              <PathaoLogo size={40} />
+              <span className={`mt-1 font-semibold ${delivery === "pathao" ? "text-[#c0251a]" : "text-ink"}`}>Pathao</span>
+              <span className="text-muted-foreground text-[10px]">+Rs 200</span>
+            </button>
+
+            {/* Bus/Cargo */}
+            <button type="button" onClick={() => setDelivery("bus")}
+              className={`flex flex-col items-center rounded-xl border p-2.5 text-center text-xs transition-all ${
+                delivery === "bus" ? "border-crimson bg-crimson/5 ring-1 ring-crimson/20" : "border-border hover:border-crimson/40 bg-paper"
+              }`}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:"40px", height:"40px", borderRadius:"10px", background:"linear-gradient(135deg,#3b82f6,#1d4ed8)", boxShadow:"0 2px 8px rgba(59,130,246,0.35)" }}>
+                <svg viewBox="0 0 20 16" fill="none" style={{ width:"20px", height:"16px" }}>
+                  <rect x="1" y="1" width="18" height="10" rx="2" stroke="white" strokeWidth="1.4" fill="white" fillOpacity="0.18"/>
+                  <rect x="3" y="3" width="4" height="4" rx="1" fill="white" fillOpacity="0.7"/>
+                  <rect x="9" y="3" width="4" height="4" rx="1" fill="white" fillOpacity="0.7"/>
+                  <circle cx="5" cy="13.5" r="2" stroke="white" strokeWidth="1.4"/>
+                  <circle cx="14" cy="13.5" r="2" stroke="white" strokeWidth="1.4"/>
+                  <path d="M7 13.5 H12" stroke="white" strokeWidth="1.2" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <span className={`mt-1 font-semibold ${delivery === "bus" ? "text-crimson" : "text-ink"}`}>Bus/Cargo</span>
+              <span className="text-muted-foreground text-[10px]">+Rs 150</span>
+            </button>
           </div>
           {delivery !== "pickup" && (
             <div className="mt-2">
@@ -333,23 +417,37 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         {/* Payment */}
         <div>
           <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Payment Method</p>
-          <div className="grid grid-cols-3 gap-2">
-            {([
-              { id: "cash",   label: "Cash on Meet", icon: "💵", sub: "Pay in person" },
-              { id: "esewa",  label: "eSewa",         icon: "🟢", sub: "Online payment" },
-              { id: "khalti", label: "Khalti",         icon: "💜", sub: "Online payment" },
-            ] as const).map(opt => (
-              <button key={opt.id} type="button" onClick={() => setPayment(opt.id)}
-                className={`flex flex-col items-center rounded-xl border p-3 text-center text-xs transition-all ${
-                  payment === opt.id
-                    ? "border-crimson bg-crimson/5 ring-1 ring-crimson/20"
-                    : "border-border hover:border-crimson/40 bg-paper"
-                }`}>
-                <span className="text-2xl">{opt.icon}</span>
-                <span className={`mt-1.5 font-bold text-sm ${payment === opt.id ? "text-crimson" : "text-ink"}`}>{opt.label}</span>
-                <span className="text-muted-foreground mt-0.5">{opt.sub}</span>
-              </button>
-            ))}
+          <div className="grid grid-cols-2 gap-2">
+            {/* eSewa */}
+            <button type="button" onClick={() => setPayment("esewa")}
+              className={`flex flex-col items-center rounded-xl border p-3 text-center text-xs transition-all ${
+                payment === "esewa" ? "border-green-500 bg-green-50 ring-1 ring-green-200" : "border-border hover:border-green-400 bg-paper"
+              }`}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:"42px", height:"42px", borderRadius:"10px", background:"linear-gradient(135deg,#6dcf3e,#4aab1a)", boxShadow:"0 2px 8px rgba(96,187,70,0.4)" }}>
+                <span style={{ color:"white", fontWeight:900, fontFamily:"Arial,sans-serif", lineHeight:1 }}>
+                  <span style={{ fontSize:"18px" }}>e</span><span style={{ fontSize:"11px", fontWeight:700 }}>S</span>
+                </span>
+              </div>
+              <span className={`mt-1.5 font-bold text-sm ${payment === "esewa" ? "text-green-700" : "text-ink"}`}>eSewa</span>
+              <span className="text-muted-foreground mt-0.5 text-[10px]">Instant pay</span>
+            </button>
+
+            {/* Khalti */}
+            <button type="button" onClick={() => setPayment("khalti")}
+              className={`flex flex-col items-center rounded-xl border p-3 text-center text-xs transition-all ${
+                payment === "khalti" ? "border-purple-500 bg-purple-50 ring-1 ring-purple-200" : "border-border hover:border-purple-400 bg-paper"
+              }`}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:"42px", height:"42px", borderRadius:"10px", background:"linear-gradient(135deg,#7c3aed,#4a1d96)", boxShadow:"0 2px 8px rgba(92,45,145,0.4)" }}>
+                {/* Khalti diamond mark */}
+                <svg viewBox="0 0 24 24" fill="none" style={{ width:"22px", height:"22px" }}>
+                  <path d="M12 3 L20 12 L12 21 L4 12 Z" fill="white" fillOpacity="0.9"/>
+                  <path d="M12 7 L17 12 L12 17 L7 12 Z" fill="url(#kp)" fillOpacity="0.85"/>
+                  <defs><linearGradient id="kp" x1="7" y1="7" x2="17" y2="17"><stop stopColor="#c4b5fd"/><stop offset="1" stopColor="#7c3aed"/></linearGradient></defs>
+                </svg>
+              </div>
+              <span className={`mt-1.5 font-bold text-sm ${payment === "khalti" ? "text-purple-700" : "text-ink"}`}>Khalti</span>
+              <span className="text-muted-foreground mt-0.5 text-[10px]">Instant pay</span>
+            </button>
           </div>
           {payment === "esewa" && (
             <div className="mt-2 rounded-xl bg-green-50 border border-green-200 px-3 py-2.5 text-xs text-green-800 space-y-1">
@@ -395,10 +493,19 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         )}
 
         <button onClick={placeOrder} disabled={loading}
-          className="w-full flex items-center justify-center gap-2 rounded-full bg-crimson py-3.5 text-sm font-bold text-paper shadow-card transition-all hover:scale-[1.02] hover:shadow-[0_6px_24px_rgba(192,57,43,0.4)] disabled:opacity-60 disabled:scale-100">
-          {loading
-            ? <><Loader2 className="h-4 w-4 animate-spin" /> {payment === "cash" ? "Placing order…" : payment === "esewa" ? "Redirecting to eSewa…" : "Redirecting to Khalti…"}</>
-            : <><CreditCard className="h-4 w-4" /> {payment === "cash" ? "Confirm Order" : payment === "esewa" ? "Pay with eSewa" : "Pay with Khalti"} &nbsp;·&nbsp; Rs {formatNpr(total)}</>}
+          className={`w-full flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold text-paper shadow-card transition-all hover:scale-[1.02] disabled:opacity-60 disabled:scale-100 ${
+            payment === "esewa" ? "bg-[#4aab1a] hover:shadow-[0_6px_24px_rgba(96,187,70,0.45)]"
+            : "bg-[#5C2D91] hover:shadow-[0_6px_24px_rgba(92,45,145,0.45)]"
+          }`}>
+          {loading ? (
+            <><Loader2 className="h-4 w-4 animate-spin" />{" "}
+              {payment === "esewa" ? "Redirecting to eSewa…" : "Redirecting to Khalti…"}
+            </>
+          ) : payment === "esewa" ? (
+            <><EsewaLogo compact /><span>Pay · Rs {formatNpr(total)}</span></>
+          ) : (
+            <><KhaltiLogo compact /><span>Pay · Rs {formatNpr(total)}</span></>
+          )}
         </button>
 
         <p className="text-center text-xs text-muted-foreground">

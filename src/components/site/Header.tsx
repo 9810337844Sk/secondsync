@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Menu, Search, X, User, LogOut, ShieldCheck, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import logo from "@/assets/logo.png";
+import { Logo } from "@/components/site/Logo";
 import { useAuth } from "@/lib/auth-context";
 
 const nav = [
@@ -46,12 +46,12 @@ export function Header() {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
 
         {/* Logo */}
-        <Link to="/" className="flex items-center gap-2">
-          <img src={logo} alt="Second Sync" className="h-10 w-10 object-contain" width={40} height={40} />
+        <Link to="/" className="flex items-center gap-2.5 group">
+          <Logo size={40} className="transition-transform group-hover:scale-105" />
           <div className="leading-tight">
-            <div className="font-display text-lg font-bold text-ink">Second Sync</div>
-            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-              सेकन्ड ह्याण्ड · स्मार्ट च्वाइस
+            <div className="font-display text-lg font-bold text-ink tracking-tight">SecondSync</div>
+            <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
+              काठमाडौं उपत्यका · Valley Market
             </div>
           </div>
         </Link>

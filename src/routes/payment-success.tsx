@@ -7,10 +7,12 @@ import { useAuth } from "@/lib/auth-context";
 import { esewaVerify, khaltiVerify, finalizeOrderAndNotify } from "@/lib/payment.server";
 
 const searchSchema = z.object({
+  // gateway is optional — we auto-detect from presence of data (eSewa) / pidx (Khalti)
   gateway:  z.string().optional(),
   order_id: z.string().optional(),
-  data:     z.string().optional(),
-  pidx:     z.string().optional(),
+  data:     z.string().optional(),   // eSewa: base64-encoded signed response
+  pidx:     z.string().optional(),   // Khalti: payment index
+  status:   z.string().optional(),   // Khalti also sends ?status=Completed
 });
 
 export const Route = createFileRoute("/payment-success")({
@@ -22,7 +24,9 @@ export const Route = createFileRoute("/payment-success")({
 type PageState = "verifying" | "success" | "failed";
 
 function PaymentSuccessPage() {
-  const { gateway, order_id, data: esewaData, pidx } = Route.useSearch();
+  const { gateway, order_id, data: esewaData, pidx, status: khaltiStatus } = Route.useSearch();
+  // Auto-detect gateway: presence of "data" → eSewa, "pidx" → Khalti
+  const detectedGateway = gateway ?? (esewaData ? "esewa" : pidx ? "khalti" : undefined);
   const { user } = useAuth();
 
   const [state,       setState]       = useState<PageState>("verifying");
@@ -36,18 +40,21 @@ function PaymentSuccessPage() {
       try {
         let confirmedOrderId: string | null = null;
 
-        if (gateway === "esewa" && esewaData) {
+        if (detectedGateway === "esewa" && esewaData) {
           const result = await esewaVerify({ data: { encodedData: esewaData } });
-          if (!result.valid) { setErrMsg("eSewa payment could not be verified."); setState("failed"); return; }
+          if (!result.valid) { setErrMsg("eSewa payment could not be verified. If money was deducted, contact support."); setState("failed"); return; }
+          // transaction_uuid IS our orderId (set during esewaSign)
           confirmedOrderId = result.transactionUuid || order_id || null;
 
-        } else if (gateway === "khalti" && pidx) {
+        } else if (detectedGateway === "khalti" && pidx) {
+          // Khalti sends ?status=Completed on success — verify via lookup for authenticity
           const result = await khaltiVerify({ data: { pidx } });
-          if (!result.valid) { setErrMsg("Khalti payment could not be verified."); setState("failed"); return; }
+          if (!result.valid) { setErrMsg("Khalti payment could not be verified. If money was deducted, contact support."); setState("failed"); return; }
+          // purchase_order_id IS our orderId (set during khaltiInitiate)
           confirmedOrderId = result.orderId || order_id || null;
 
         } else {
-          setErrMsg("Missing payment confirmation data.");
+          setErrMsg("Missing payment confirmation data. Please check your orders in Dashboard.");
           setState("failed");
           return;
         }
@@ -65,22 +72,21 @@ function PaymentSuccessPage() {
           return;
         }
 
-        // Generate delivery OTP, store it, and email the seller.
-        // Non-fatal: if the DB schema is outdated or email fails,
-        // the payment is still confirmed — just no OTP shown.
+        // Generate delivery OTP, store it, and email both parties.
         try {
           const { otp } = await finalizeOrderAndNotify({
             data: { orderId: confirmedOrderId, buyerId: user.id },
           });
           setDeliveryOtp(otp);
-        } catch {
-          // OTP will be missing but payment is confirmed — user can still proceed
+        } catch (emailErr: any) {
+          console.error("[finalizeOrderAndNotify]", emailErr?.message ?? emailErr);
+          // Payment is confirmed — OTP is in Dashboard → My Orders even if email failed
         }
 
         await supabase.from("activity_logs").insert({
           user_id: user.id,
           action:  "ORDER_PAID",
-          detail:  `Payment confirmed via ${gateway?.toUpperCase()} for order ${confirmedOrderId}.`,
+          detail:  `Payment confirmed via ${detectedGateway?.toUpperCase()} for order ${confirmedOrderId}.`,
         });
 
         setState("success");
