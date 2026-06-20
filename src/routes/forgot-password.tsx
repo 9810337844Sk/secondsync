@@ -26,7 +26,7 @@ function ForgotPasswordPage() {
 
     setLoading(false);
     if (resetErr) {
-      setError("Could not send reset email. Check the address and try again.");
+      setError(resetErr.message || "Could not send reset email. Check the address and try again.");
       return;
     }
     setSent(true);
