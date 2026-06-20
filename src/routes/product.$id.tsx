@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { recordView, getSimilarListings, getPersonalizedRecommendations } from "@/lib/recommendations";
 import { DamageAnalyzer } from "@/components/site/DamageAnalyzer";
-import { esewaSign, khaltiInitiate, esewaSimulateDev } from "@/lib/payment.server";
+import { esewaSign, esewaSimulateDev } from "@/lib/payment.server";
 
 export const Route = createFileRoute("/product/$id")({
   head: () => ({ meta: [{ title: "Listing — Second Sync" }] }),
@@ -85,28 +85,6 @@ function EsewaLogo({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function KhaltiLogo({ compact = false }: { compact?: boolean }) {
-  return (
-    <div
-      style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        gap: "3px",
-        width: compact ? "48px" : "64px",
-        height: compact ? "26px" : "34px",
-        borderRadius: "8px",
-        background: "linear-gradient(135deg, #6d35b0 0%, #4a1f85 100%)",
-        padding: "0 8px",
-        boxShadow: "0 2px 8px rgba(92,45,145,0.35)",
-      }}
-    >
-      {/* Stylised diamond dot */}
-      <svg width={compact ? "8" : "10"} height={compact ? "8" : "10"} viewBox="0 0 10 10" fill="none">
-        <rect x="2" y="2" width="6" height="6" rx="1.5" fill="white" transform="rotate(45 5 5)"/>
-      </svg>
-      <span style={{ color: "white", fontSize: compact ? "9px" : "11px", fontWeight: 700, letterSpacing: "-0.2px", fontFamily: "Arial, sans-serif" }}>khalti</span>
-    </div>
-  );
-}
 
 function PathaoLogo({ size = 40 }: { size?: number }) {
   return (
@@ -149,7 +127,7 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
   const [buyerPhone, setBuyerPhone] = useState(profile?.phone ?? "");
   const [address, setAddress]     = useState("");
   const [delivery, setDelivery]   = useState<"pickup" | "pathao" | "bus">("pickup");
-  const [payment, setPayment]     = useState<"esewa" | "khalti">("esewa");
+  const [payment] = useState<"esewa">("esewa");
   const [note, setNote]           = useState("");
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState("");
@@ -261,29 +239,6 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
       } catch (err: any) {
         setLoading(false);
         setError(err?.message ?? "eSewa payment failed. Please try again.");
-      }
-      return;
-    }
-
-    // ── Khalti: initiate → redirect to Khalti hosted checkout ──────
-    if (payment === "khalti") {
-      try {
-        const origin = window.location.origin;
-        const { paymentUrl } = await khaltiInitiate({
-          data: {
-            orderId:    orderId,
-            orderName:  product.title.slice(0, 100),
-            amountNpr:  total,
-            // Khalti appends ?pidx=&status=&... — clean base URL avoids
-            // double-? issues. orderId recovered from purchase_order_id in lookup.
-            returnUrl:  `${origin}/payment-success`,
-            websiteUrl: origin,
-          },
-        });
-        window.location.href = paymentUrl;
-      } catch (err: any) {
-        setLoading(false);
-        setError(err?.message ?? "Khalti payment initiation failed.");
       }
       return;
     }
@@ -417,50 +372,17 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         {/* Payment */}
         <div>
           <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Payment Method</p>
-          <div className="grid grid-cols-2 gap-2">
-            {/* eSewa */}
-            <button type="button" onClick={() => setPayment("esewa")}
-              className={`flex flex-col items-center rounded-xl border p-3 text-center text-xs transition-all ${
-                payment === "esewa" ? "border-green-500 bg-green-50 ring-1 ring-green-200" : "border-border hover:border-green-400 bg-paper"
-              }`}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:"42px", height:"42px", borderRadius:"10px", background:"linear-gradient(135deg,#6dcf3e,#4aab1a)", boxShadow:"0 2px 8px rgba(96,187,70,0.4)" }}>
-                <span style={{ color:"white", fontWeight:900, fontFamily:"Arial,sans-serif", lineHeight:1 }}>
-                  <span style={{ fontSize:"18px" }}>e</span><span style={{ fontSize:"11px", fontWeight:700 }}>S</span>
-                </span>
-              </div>
-              <span className={`mt-1.5 font-bold text-sm ${payment === "esewa" ? "text-green-700" : "text-ink"}`}>eSewa</span>
-              <span className="text-muted-foreground mt-0.5 text-[10px]">Instant pay</span>
-            </button>
-
-            {/* Khalti */}
-            <button type="button" onClick={() => setPayment("khalti")}
-              className={`flex flex-col items-center rounded-xl border p-3 text-center text-xs transition-all ${
-                payment === "khalti" ? "border-purple-500 bg-purple-50 ring-1 ring-purple-200" : "border-border hover:border-purple-400 bg-paper"
-              }`}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:"42px", height:"42px", borderRadius:"10px", background:"linear-gradient(135deg,#7c3aed,#4a1d96)", boxShadow:"0 2px 8px rgba(92,45,145,0.4)" }}>
-                {/* Khalti diamond mark */}
-                <svg viewBox="0 0 24 24" fill="none" style={{ width:"22px", height:"22px" }}>
-                  <path d="M12 3 L20 12 L12 21 L4 12 Z" fill="white" fillOpacity="0.9"/>
-                  <path d="M12 7 L17 12 L12 17 L7 12 Z" fill="url(#kp)" fillOpacity="0.85"/>
-                  <defs><linearGradient id="kp" x1="7" y1="7" x2="17" y2="17"><stop stopColor="#c4b5fd"/><stop offset="1" stopColor="#7c3aed"/></linearGradient></defs>
-                </svg>
-              </div>
-              <span className={`mt-1.5 font-bold text-sm ${payment === "khalti" ? "text-purple-700" : "text-ink"}`}>Khalti</span>
-              <span className="text-muted-foreground mt-0.5 text-[10px]">Instant pay</span>
-            </button>
+          <div className="flex items-center gap-3 rounded-xl border border-green-500 bg-green-50 ring-1 ring-green-200 p-3">
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:"42px", height:"42px", borderRadius:"10px", background:"linear-gradient(135deg,#6dcf3e,#4aab1a)", boxShadow:"0 2px 8px rgba(96,187,70,0.4)", flexShrink:0 }}>
+              <span style={{ color:"white", fontWeight:900, fontFamily:"Arial,sans-serif", lineHeight:1 }}>
+                <span style={{ fontSize:"18px" }}>e</span><span style={{ fontSize:"11px", fontWeight:700 }}>S</span>
+              </span>
+            </div>
+            <div>
+              <p className="font-bold text-sm text-green-700">eSewa</p>
+              <p className="text-xs text-green-600 flex items-center gap-1"><Shield className="h-3 w-3" /> Secured digital payment</p>
+            </div>
           </div>
-          {payment === "esewa" && (
-            <div className="mt-2 rounded-xl bg-green-50 border border-green-200 px-3 py-2.5 text-xs text-green-800 space-y-1">
-              <div className="flex items-center gap-1.5 font-semibold"><Shield className="h-3.5 w-3.5 flex-shrink-0" /> Secured by eSewa</div>
-              <div className="text-green-700">Test: ID <strong>9806800001</strong> · Pass <strong>Nepal@123</strong> · OTP <strong>123456</strong></div>
-            </div>
-          )}
-          {payment === "khalti" && (
-            <div className="mt-2 rounded-xl bg-purple-50 border border-purple-200 px-3 py-2.5 text-xs text-purple-800 space-y-1">
-              <div className="flex items-center gap-1.5 font-semibold"><Shield className="h-3.5 w-3.5 flex-shrink-0" /> Secured by Khalti</div>
-              <div className="text-purple-700">Test: ID <strong>9800000001</strong> · MPIN <strong>1111</strong> · OTP <strong>987654</strong></div>
-            </div>
-          )}
         </div>
 
         {/* Note */}
@@ -493,18 +415,11 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         )}
 
         <button onClick={placeOrder} disabled={loading}
-          className={`w-full flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold text-paper shadow-card transition-all hover:scale-[1.02] disabled:opacity-60 disabled:scale-100 ${
-            payment === "esewa" ? "bg-[#4aab1a] hover:shadow-[0_6px_24px_rgba(96,187,70,0.45)]"
-            : "bg-[#5C2D91] hover:shadow-[0_6px_24px_rgba(92,45,145,0.45)]"
-          }`}>
+          className="w-full flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold text-paper shadow-card transition-all hover:scale-[1.02] disabled:opacity-60 disabled:scale-100 bg-[#4aab1a] hover:shadow-[0_6px_24px_rgba(96,187,70,0.45)]">
           {loading ? (
-            <><Loader2 className="h-4 w-4 animate-spin" />{" "}
-              {payment === "esewa" ? "Redirecting to eSewa…" : "Redirecting to Khalti…"}
-            </>
-          ) : payment === "esewa" ? (
-            <><EsewaLogo compact /><span>Pay · Rs {formatNpr(total)}</span></>
+            <><Loader2 className="h-4 w-4 animate-spin" /> Redirecting to eSewa…</>
           ) : (
-            <><KhaltiLogo compact /><span>Pay · Rs {formatNpr(total)}</span></>
+            <><EsewaLogo compact /><span>Pay with eSewa · Rs {formatNpr(total)}</span></>
           )}
         </button>
 
