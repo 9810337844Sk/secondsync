@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   User, Package, ShoppingBag, Settings, LogOut,
   CheckCircle2, Clock, MapPin, Edit3, Save, X,
-  Loader2, BadgeCheck, Eye, EyeOff, Tag, ShoppingCart, Key,
+  Loader2, BadgeCheck, Eye, EyeOff, Tag, ShoppingCart, Key, Bell,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
@@ -56,10 +56,13 @@ function DashboardPage() {
             </p>
           </div>
         </div>
-        <button onClick={async () => { await signOut(); navigate({ to: "/" }); }}
-          className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition-colors">
-          <LogOut className="h-4 w-4" /> Sign Out
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationBell userId={user.id} />
+          <button onClick={async () => { await signOut(); navigate({ to: "/" }); }}
+            className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition-colors">
+            <LogOut className="h-4 w-4" /> Sign Out
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -84,6 +87,111 @@ function DashboardPage() {
       {tab === "orders"   && <OrdersTab   email={user.email ?? ""} userId={user.id} />}
       {tab === "sales"    && <SalesTab    userId={user.id} />}
       {tab === "settings" && <SettingsTab profile={profile} userId={user.id} onSaved={refreshProfile} />}
+    </div>
+  );
+}
+
+/* ── Notification Bell ────────────────────────────────────────── */
+function NotificationBell({ userId }: { userId: string }) {
+  const [open, setOpen]                   = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const unread = notifications.filter(n => !n.is_read).length;
+
+  useEffect(() => {
+    supabase.from("notifications").select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(30)
+      .then(({ data }) => setNotifications(data ?? []));
+
+    const channel = supabase
+      .channel(`notif_${userId}`)
+      .on("postgres_changes", {
+        event: "INSERT", schema: "public", table: "notifications",
+        filter: `user_id=eq.${userId}`,
+      }, (payload) => {
+        setNotifications(prev => [payload.new as any, ...prev]);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [userId]);
+
+  // Close on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  async function markRead(id: string) {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    await supabase.from("notifications").update({ is_read: true }).eq("id", id).eq("user_id", userId);
+  }
+
+  async function markAllRead() {
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    await supabase.from("notifications").update({ is_read: true }).eq("user_id", userId).eq("is_read", false);
+  }
+
+  const typeIcon: Record<string, string> = {
+    order_new:       "🛒",
+    order_confirmed: "✅",
+    order_completed: "🎉",
+    sale_completed:  "💰",
+    order_cancelled: "❌",
+    listing_sold:    "🏷️",
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)}
+        className="relative flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card hover:border-crimson/40 hover:bg-crimson/5 transition-colors">
+        <Bell className="h-4 w-4 text-muted-foreground" />
+        {unread > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white">
+            {unread > 9 ? "9+" : unread}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-11 z-50 w-80 rounded-2xl border border-border bg-card shadow-elegant overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <p className="font-semibold text-sm text-ink">Notifications</p>
+            {unread > 0 && (
+              <button onClick={markAllRead} className="text-xs text-crimson hover:underline">
+                Mark all read
+              </button>
+            )}
+          </div>
+          <div className="max-h-96 overflow-y-auto divide-y divide-border">
+            {notifications.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-center">
+                <Bell className="h-8 w-8 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">No notifications yet</p>
+              </div>
+            ) : notifications.map(n => (
+              <div key={n.id} onClick={() => markRead(n.id)}
+                className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-secondary/50 ${!n.is_read ? "bg-crimson/5" : ""}`}>
+                <span className="text-lg flex-shrink-0 mt-0.5">{typeIcon[n.type] ?? "🔔"}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className={`text-sm truncate ${!n.is_read ? "font-semibold text-ink" : "text-ink"}`}>{n.title}</p>
+                    {!n.is_read && <div className="h-2 w-2 flex-shrink-0 rounded-full bg-crimson" />}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body}</p>
+                  <p className="text-[10px] text-muted-foreground/70 mt-1">{timeAgo(n.created_at)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

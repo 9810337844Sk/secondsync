@@ -249,3 +249,87 @@ GRANT EXECUTE ON FUNCTION admin_mark_message_read(uuid)                 TO authe
 
 -- ─── Enable Realtime on orders ───────────────────────────────────
 ALTER PUBLICATION supabase_realtime ADD TABLE orders;
+
+-- ================================================================
+-- NOTIFICATIONS
+-- ================================================================
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    uuid        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  title      text        NOT NULL,
+  body       text        NOT NULL,
+  type       text        NOT NULL,
+  is_read    boolean     NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- RLS: users can only see/update their own notifications
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "users_read_own_notifications"   ON notifications;
+DROP POLICY IF EXISTS "users_update_own_notifications" ON notifications;
+CREATE POLICY "users_read_own_notifications"   ON notifications FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "users_update_own_notifications" ON notifications FOR UPDATE USING (user_id = auth.uid());
+
+-- Trigger: new order → notify seller
+CREATE OR REPLACE FUNCTION _notify_order_insert()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  INSERT INTO notifications (user_id, title, body, type)
+  VALUES (
+    NEW.seller_id,
+    'New order received!',
+    NEW.buyer_name || ' ordered "' || NEW.listing_title || '" — Rs ' || NEW.total,
+    'order_new'
+  );
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS trg_notify_order_insert ON orders;
+CREATE TRIGGER trg_notify_order_insert
+  AFTER INSERT ON orders
+  FOR EACH ROW EXECUTE FUNCTION _notify_order_insert();
+
+-- Trigger: order status changes → notify buyer + seller
+CREATE OR REPLACE FUNCTION _notify_order_update()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF OLD.status IS NOT DISTINCT FROM NEW.status THEN RETURN NEW; END IF;
+
+  IF NEW.status = 'confirmed' THEN
+    INSERT INTO notifications (user_id, title, body, type)
+    VALUES (
+      NEW.buyer_id,
+      'Your order is confirmed!',
+      'Payment for "' || NEW.listing_title || '" has been confirmed. Keep your delivery code ready.',
+      'order_confirmed'
+    );
+  END IF;
+
+  IF NEW.status = 'completed' THEN
+    INSERT INTO notifications (user_id, title, body, type)
+    VALUES
+      (NEW.buyer_id,  'Delivery confirmed!',  '"' || NEW.listing_title || '" has been delivered. Enjoy!', 'order_completed'),
+      (NEW.seller_id, 'Your item is sold!',   '"' || NEW.listing_title || '" delivered & transaction complete.', 'sale_completed');
+  END IF;
+
+  IF NEW.status = 'cancelled' THEN
+    INSERT INTO notifications (user_id, title, body, type)
+    VALUES (
+      NEW.seller_id,
+      'Order cancelled',
+      'The order for "' || NEW.listing_title || '" was cancelled.',
+      'order_cancelled'
+    );
+  END IF;
+
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS trg_notify_order_update ON orders;
+CREATE TRIGGER trg_notify_order_update
+  AFTER UPDATE ON orders
+  FOR EACH ROW EXECUTE FUNCTION _notify_order_update();
+
+-- Enable Realtime on notifications
+ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
