@@ -21,13 +21,16 @@ type PageState = "verifying" | "success" | "failed";
 
 function PaymentSuccessPage() {
   const { pidx, status, purchase_order_id } = Route.useSearch();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const [state,       setState]       = useState<PageState>("verifying");
   const [errMsg,      setErrMsg]      = useState("");
   const [deliveryOtp, setDeliveryOtp] = useState("");
 
   useEffect(() => {
+    // Auth still initialising — stay on "verifying" spinner
+    if (authLoading) return;
+
     async function verify() {
       if (!user) { setErrMsg("Please sign in to verify your payment."); setState("failed"); return; }
 
@@ -113,7 +116,7 @@ function PaymentSuccessPage() {
 
     verify();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, authLoading]);
 
   /* ── Loading ── */
   if (state === "verifying") {
