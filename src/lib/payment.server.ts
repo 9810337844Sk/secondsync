@@ -25,7 +25,7 @@ export const khaltiInitiate = createServerFn({ method: "POST" })
     websiteUrl:  z.string(),
   }))
   .handler(async ({ data }) => {
-    const secret = process.env.KHALTI_SECRET_KEY ?? "";
+    const secret = (process.env.KHALTI_SECRET_KEY ?? "").replace(/^﻿/, "").trim();
     const res = await fetch(`${KHALTI_BASE}/epayment/initiate/`, {
       method:  "POST",
       headers: {
@@ -58,7 +58,7 @@ export const khaltiInitiate = createServerFn({ method: "POST" })
 export const khaltiVerify = createServerFn({ method: "POST" })
   .inputValidator(z.object({ pidx: z.string() }))
   .handler(async ({ data }) => {
-    const secret = process.env.KHALTI_SECRET_KEY ?? "";
+    const secret = (process.env.KHALTI_SECRET_KEY ?? "").replace(/^﻿/, "").trim();
     const res = await fetch(`${KHALTI_BASE}/epayment/lookup/`, {
       method:  "POST",
       headers: {
