@@ -1222,10 +1222,7 @@ function MessagesTab() {
 
   async function loadMessages() {
     setLoading(true);
-    const { data } = await supabase
-      .from("contact_messages")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data } = await supabase.rpc("admin_get_contact_messages");
     setMessages((data as ContactMessage[]) ?? []);
     setLoading(false);
   }

@@ -111,6 +111,9 @@ function emailFooter() {
   </p>`;
 }
 
+const fmtNpr = (n: number | string) =>
+  Number(n).toLocaleString("en-IN");
+
 function orderTable(rows: [string, string, bold?: boolean][]) {
   return `<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
     ${rows.map(([k, v, bold], i) => `
@@ -168,7 +171,7 @@ export const finalizeOrderAndNotify = createServerFn({ method: "POST" })
               ["Email",    o.buyer_email],
               ["Delivery", deliveryLine],
               ...(o.note ? [["Note", `<em>${o.note}</em>`] as [string,string]] : []),
-              ["Total",    `Rs ${o.total}`, true],
+              ["Total",    `Rs ${fmtNpr(o.total)}`, true],
             ])}
             <div style="background:#fff8e1;border-left:4px solid #f59e0b;padding:16px 20px;border-radius:6px">
               <p style="margin:0;font-weight:700;font-size:14px">What to do next:</p>
@@ -196,7 +199,7 @@ export const finalizeOrderAndNotify = createServerFn({ method: "POST" })
               ["Payment",  String(o.payment).toUpperCase()],
               ["Delivery", deliveryLine],
               ...(o.note ? [["Note", `<em>${o.note}</em>`] as [string,string]] : []),
-              ["Total",    `Rs ${o.total}`, true],
+              ["Total",    `Rs ${fmtNpr(o.total)}`, true],
             ])}
             <div style="background:#fff8e1;border:2px solid #f59e0b;border-radius:12px;padding:24px;text-align:center;margin-bottom:20px">
               <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:#92400e;letter-spacing:0.08em;text-transform:uppercase">Your Delivery Code</p>

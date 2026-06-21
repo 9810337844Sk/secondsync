@@ -333,3 +333,26 @@ CREATE TRIGGER trg_notify_order_update
 
 -- Enable Realtime on notifications
 ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+
+-- ─── admin_get_contact_messages ──────────────────────────────────
+-- SECURITY DEFINER so the admin panel (anon client) can read messages
+-- without needing Supabase auth session.
+DROP FUNCTION IF EXISTS admin_get_contact_messages();
+CREATE OR REPLACE FUNCTION admin_get_contact_messages()
+RETURNS TABLE (
+  id         uuid,
+  name       text,
+  email      text,
+  subject    text,
+  message    text,
+  is_read    boolean,
+  created_at timestamptz
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  RETURN QUERY
+    SELECT cm.id, cm.name, cm.email, cm.subject, cm.message, cm.is_read, cm.created_at
+    FROM contact_messages cm
+    ORDER BY cm.created_at DESC;
+END; $$;
+
+GRANT EXECUTE ON FUNCTION admin_get_contact_messages() TO authenticated, anon, service_role;
