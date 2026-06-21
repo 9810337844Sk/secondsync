@@ -344,6 +344,9 @@ export const notifyContactMessage = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }) => {
     const transport = makeTransport();
+    const safeMsg = data.message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    // Email 1 — admin notification
     await transport.sendMail({
       from:    FROM,
       to:      "teamkalpantrix@gmail.com",
@@ -358,11 +361,34 @@ export const notifyContactMessage = createServerFn({ method: "POST" })
             ["Subject", data.subject],
           ])}
           <div style="background:#f9f9f9;border-left:4px solid #c0392b;padding:16px 20px;border-radius:6px;white-space:pre-wrap;font-size:14px;line-height:1.6">
-            ${data.message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
+            ${safeMsg}
           </div>
           <p style="margin:20px 0 0;font-size:12px;color:#888">
             Reply directly to this email — it will go to ${data.email}
           </p>
+        </div>
+      </div>`,
+    });
+
+    // Email 2 — confirmation to the sender
+    await transport.sendMail({
+      from:    FROM,
+      to:      data.email,
+      subject: `We received your message — Second Sync`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
+        ${emailHeader("Thanks for reaching out!", `Hi ${data.name}, we've got your message`)}
+        <div style="border:1px solid #e5e5e5;border-top:none;padding:28px 32px;border-radius:0 0 12px 12px">
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6">
+            We received your message and will get back to you within <strong>24 hours</strong>.
+          </p>
+          ${orderTable([["Subject", data.subject]])}
+          <div style="background:#f9f9f9;border-left:4px solid #c0392b;padding:16px 20px;border-radius:6px;white-space:pre-wrap;font-size:14px;line-height:1.6;color:#555">
+            ${safeMsg}
+          </div>
+          <p style="margin:20px 0 0;font-size:13px;color:#888">
+            If you didn't send this message, you can safely ignore this email.
+          </p>
+          ${emailFooter()}
         </div>
       </div>`,
     });
