@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Mail, MapPin, Phone, CheckCircle2, Loader2, Home } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import { notifyContactMessage } from "@/lib/payment.server";
 
 export const Route = createFileRoute("/contact")({
@@ -47,21 +46,10 @@ function Contact() {
     setError("");
     setLoading(true);
     try {
-      const { error: dbError } = await supabase.from("contact_messages").insert({
-        name,
-        email,
-        subject,
-        message,
-      });
-      if (dbError) {
-        setError(`Failed to send message. Please email us directly at teamkalpantrix@gmail.com`);
-      } else {
-        // Fire email notification to admin (non-blocking — form success regardless)
-        notifyContactMessage({ data: { name, email, subject, message } }).catch(() => {});
-        setSent(true);
-      }
+      await notifyContactMessage({ data: { name, email, subject, message } });
+      setSent(true);
     } catch {
-      setError("Network error. Please email us directly at teamkalpantrix@gmail.com");
+      setError("Failed to send message. Please email us directly at teamkalpantrix@gmail.com");
     } finally {
       setLoading(false);
     }

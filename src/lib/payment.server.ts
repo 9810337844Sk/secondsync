@@ -334,7 +334,8 @@ export const notifySellerMessage = createServerFn({ method: "POST" })
   });
 
 // ─── Contact form notification ────────────────────────────────────
-// Called after a contact message is saved to DB — emails the admin.
+// Saves to DB (server-side, bypasses RLS) and emails both admin and sender.
+// Works for any visitor — no auth required.
 export const notifyContactMessage = createServerFn({ method: "POST" })
   .inputValidator(z.object({
     name:    z.string(),
@@ -343,6 +344,18 @@ export const notifyContactMessage = createServerFn({ method: "POST" })
     message: z.string(),
   }))
   .handler(async ({ data }) => {
+    // Save to DB using service-role key (bypasses RLS) if available, else anon key
+    const dbKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? SUPABASE_ANON_KEY;
+    const db = createClient(SUPABASE_URL, dbKey);
+    await db.from("contact_messages").insert({
+      name:    data.name,
+      email:   data.email,
+      subject: data.subject,
+      message: data.message,
+    }).then(({ error }) => {
+      if (error) console.error("[contact] DB insert failed:", error.message);
+    });
+
     const transport = makeTransport();
     const safeMsg = data.message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
