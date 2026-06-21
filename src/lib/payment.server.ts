@@ -84,11 +84,13 @@ export const khaltiVerify = createServerFn({ method: "POST" })
 
 // ─── Shared email transport factory ──────────────────────────────
 function makeTransport() {
+  const clean = (v: string | undefined, fallback = "") =>
+    (v ?? fallback).replace(/^﻿/, "").trim();
   return nodemailer.createTransport({
     host: "smtp.gmail.com", port: 587, secure: false,
     auth: {
-      user: process.env.SMTP_USER ?? "teamkalpantrix@gmail.com",
-      pass: process.env.SMTP_PASS ?? "",
+      user: clean(process.env.SMTP_USER, "teamkalpantrix@gmail.com"),
+      pass: clean(process.env.SMTP_PASS),
     },
   });
 }
