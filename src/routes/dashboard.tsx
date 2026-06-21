@@ -104,7 +104,10 @@ function NotificationBell({ userId }: { userId: string }) {
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(30)
-      .then(({ data }) => setNotifications(data ?? []));
+      .then(({ data, error }) => {
+        if (error) console.error("[notifications] fetch error:", error.message);
+        setNotifications(data ?? []);
+      });
 
     const channel = supabase
       .channel(`notif_${userId}`)

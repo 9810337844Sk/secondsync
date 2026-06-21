@@ -23,7 +23,7 @@ EXPERTISE:
   • Books: 30-50% of cover price
   • Furniture: 40-60% of original
   • Fashion: 20-40% of original
-- Platform: free listing, 4% fee on sale, eSewa/Khalti/IME Pay/cash, Pathao delivery (Rs 100-250 valley, Rs 300+ outside), safe-meet points in 12+ cities
+- Platform: free listing, Khalti digital payment or cash at safe-meet points, Pathao delivery (Rs 100-250 valley, Rs 300+ outside), safe-meet points in 12+ cities
 - Buying tips, selling tips, negotiation, condition checks, scam prevention
 
 STRICT RULES:
@@ -48,6 +48,16 @@ const QUICK = [
   "🚚 Delivery options?",
   "कसरी बिक्री गर्ने?",
 ];
+
+// Strip <think>...</think> reasoning blocks that Qwen3 emits
+function stripThinking(text: string): string {
+  // Remove any complete <think>...</think> blocks
+  let out = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  // If there's an unclosed <think>, hide everything from it onward
+  const open = out.indexOf("<think>");
+  if (open !== -1) out = out.slice(0, open);
+  return out.trimStart();
+}
 
 // ─── Groq streaming fetch ───────────────────────────────────────────────────
 async function streamGroq(
@@ -165,26 +175,26 @@ export function Chatbot() {
           const updated = [...prev];
           updated[updated.length - 1] = {
             role: "assistant",
-            text: fullText,
+            text: stripThinking(fullText),
             streaming: true,
           };
           return updated;
         });
       },
       () => {
-        // Done
+        const clean = stripThinking(fullText);
         setMessages((prev) => {
           const updated = [...prev];
           updated[updated.length - 1] = {
             role: "assistant",
-            text: fullText,
+            text: clean,
             streaming: false,
           };
           return updated;
         });
         historyRef.current = [
           ...historyRef.current,
-          { role: "assistant", content: fullText },
+          { role: "assistant", content: clean },
         ].slice(-10);
         setLoading(false);
       },
@@ -239,7 +249,7 @@ export function Chatbot() {
       {/* FAB */}
       <button
         onClick={() => setOpen((o) => !o)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-crimson text-paper shadow-elegant transition-all hover:scale-110 hover:shadow-[0_8px_30px_rgba(192,57,43,0.5)]"
+        className={`fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-crimson text-paper shadow-elegant transition-all hover:scale-110 hover:shadow-[0_8px_30px_rgba(192,57,43,0.5)] ${!open ? "animate-glow-pulse" : ""}`}
         aria-label="Open AI chat assistant"
       >
         {open
@@ -254,7 +264,7 @@ export function Chatbot() {
       </button>
 
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 flex h-[580px] w-[380px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-paper shadow-elegant animate-float-in">
+        <div className="fixed bottom-24 right-6 z-50 flex h-[580px] w-[380px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-paper shadow-elegant animate-scale-pop origin-bottom-right">
 
           {/* Header */}
           <div className="bg-gradient-hero px-4 py-3.5 text-paper">
@@ -290,7 +300,7 @@ export function Chatbot() {
           {/* Messages */}
           <div className="flex-1 space-y-3 overflow-y-auto bg-secondary/30 p-4">
             {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div key={i} className={`flex animate-fade-up ${m.role === "user" ? "justify-end" : "justify-start"}`} style={{ animationDelay: `${Math.min(i * 30, 120)}ms` }}>
                 {m.role === "assistant" && (
                   <div className="mr-2 mt-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-hero text-sm">
                     🛍️

@@ -1,22 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, XCircle, ShoppingBag, Key } from "lucide-react";
-import { z } from "zod";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
-import { esewaVerify, khaltiVerify, finalizeOrderAndNotify } from "@/lib/payment.server";
-
-const searchSchema = z.object({
-  // gateway is optional — we auto-detect from presence of data (eSewa) / pidx (Khalti)
-  gateway:  z.string().optional(),
-  order_id: z.string().optional(),
-  data:     z.string().optional(),   // eSewa: base64-encoded signed response
-  pidx:     z.string().optional(),   // Khalti: payment index
-  status:   z.string().optional(),   // Khalti also sends ?status=Completed
-});
+import { khaltiVerify, finalizeOrderAndNotify } from "@/lib/payment.server";
 
 export const Route = createFileRoute("/payment-success")({
-  validateSearch: searchSchema,
+  validateSearch: (search: Record<string, unknown>) => ({
+    pidx:              typeof search.pidx === "string"              ? search.pidx              : undefined,
+    status:            typeof search.status === "string"            ? search.status            : undefined,
+    transaction_id:    typeof search.transaction_id === "string"    ? search.transaction_id    : undefined,
+    purchase_order_id: typeof search.purchase_order_id === "string" ? search.purchase_order_id : undefined,
+    amount:            search.amount !== undefined ? String(search.amount) : undefined,
+  }),
   head: () => ({ meta: [{ title: "Payment Confirmed — Second Sync" }] }),
   component: PaymentSuccessPage,
 });
@@ -24,9 +20,7 @@ export const Route = createFileRoute("/payment-success")({
 type PageState = "verifying" | "success" | "failed";
 
 function PaymentSuccessPage() {
-  const { gateway, order_id, data: esewaData, pidx, status: khaltiStatus } = Route.useSearch();
-  // Auto-detect gateway: presence of "data" → eSewa, "pidx" → Khalti
-  const detectedGateway = gateway ?? (esewaData ? "esewa" : pidx ? "khalti" : undefined);
+  const { pidx, status, purchase_order_id } = Route.useSearch();
   const { user } = useAuth();
 
   const [state,       setState]       = useState<PageState>("verifying");
@@ -38,25 +32,35 @@ function PaymentSuccessPage() {
       if (!user) { setErrMsg("Please sign in to verify your payment."); setState("failed"); return; }
 
       try {
-        let confirmedOrderId: string | null = null;
-
-        if (detectedGateway === "esewa" && esewaData) {
-          const result = await esewaVerify({ data: { encodedData: esewaData } });
-          if (!result.valid) { setErrMsg("eSewa payment could not be verified. If money was deducted, contact support."); setState("failed"); return; }
-          // transaction_uuid IS our orderId (set during esewaSign)
-          confirmedOrderId = result.transactionUuid || order_id || null;
-
-        } else if (detectedGateway === "khalti" && pidx) {
-          // Khalti sends ?status=Completed on success — verify via lookup for authenticity
-          const result = await khaltiVerify({ data: { pidx } });
-          if (!result.valid) { setErrMsg("Khalti payment could not be verified. If money was deducted, contact support."); setState("failed"); return; }
-          // purchase_order_id IS our orderId (set during khaltiInitiate)
-          confirmedOrderId = result.orderId || order_id || null;
-
-        } else {
+        // Guard: need pidx to proceed
+        if (!pidx) {
           setErrMsg("Missing payment confirmation data. Please check your orders in Dashboard.");
           setState("failed");
           return;
+        }
+
+        // User cancelled on Khalti's page
+        if (status === "User canceled" || status === "Expired") {
+          setErrMsg("Payment was cancelled. Your order has not been confirmed.");
+          setState("failed");
+          return;
+        }
+
+        // Primary check: Khalti's redirect status param (Khalti controls this redirect)
+        if (status !== "Completed") {
+          setErrMsg(`Payment status: ${status || "unknown"}. Please try again or contact support.`);
+          setState("failed");
+          return;
+        }
+
+        // Secondary: server-side lookup to get orderId and extra confirmation
+        // Falls back to URL param if lookup fails (e.g. sandbox latency)
+        let confirmedOrderId: string | null = purchase_order_id ?? null;
+        try {
+          const result = await khaltiVerify({ data: { pidx } });
+          if (result.orderId) confirmedOrderId = result.orderId;
+        } catch {
+          // Lookup failed — proceed with purchase_order_id from URL
         }
 
         if (!confirmedOrderId) { setErrMsg("Could not identify the order."); setState("failed"); return; }
@@ -72,22 +76,33 @@ function PaymentSuccessPage() {
           return;
         }
 
-        // Generate delivery OTP, store it, and email both parties.
-        try {
-          const { otp } = await finalizeOrderAndNotify({
-            data: { orderId: confirmedOrderId, buyerId: user.id },
-          });
-          setDeliveryOtp(otp);
-        } catch (emailErr: any) {
-          console.error("[finalizeOrderAndNotify]", emailErr?.message ?? emailErr);
-          // Payment is confirmed — OTP is in Dashboard → My Orders even if email failed
-        }
+        const alreadyProcessed = !!confirmErr?.message?.includes("already processed");
 
-        await supabase.from("activity_logs").insert({
-          user_id: user.id,
-          action:  "ORDER_PAID",
-          detail:  `Payment confirmed via ${detectedGateway?.toUpperCase()} for order ${confirmedOrderId}.`,
-        });
+        if (!alreadyProcessed) {
+          // First visit — generate OTP, store it, email both parties
+          try {
+            const { otp } = await finalizeOrderAndNotify({
+              data: { orderId: confirmedOrderId, buyerId: user.id },
+            });
+            setDeliveryOtp(otp);
+          } catch (emailErr: any) {
+            console.error("[finalizeOrderAndNotify]", emailErr?.message ?? emailErr);
+          }
+
+          await supabase.from("activity_logs").insert({
+            user_id: user.id,
+            action:  "ORDER_PAID",
+            detail:  `Payment confirmed via KHALTI for order ${confirmedOrderId}.`,
+          });
+        } else {
+          // Refresh — order already confirmed, just load the existing OTP from DB
+          const { data: orderRow } = await supabase
+            .from("orders")
+            .select("delivery_otp")
+            .eq("id", confirmedOrderId)
+            .single();
+          if (orderRow?.delivery_otp) setDeliveryOtp(orderRow.delivery_otp);
+        }
 
         setState("success");
       } catch (err: any) {

@@ -336,7 +336,7 @@ function SignupForm({ onSuccess }: { onSuccess: () => void }) {
       </div>
 
       <div className="flex flex-col gap-1.5 rounded-xl bg-secondary/60 px-4 py-3">
-        {["Free to list forever", "eSewa & Khalti payouts", "Verified buyer protection"].map((p) => (
+        {["Free to list forever", "Khalti-secured checkout", "Verified buyer protection"].map((p) => (
           <div key={p} className="flex items-center gap-2 text-xs text-muted-foreground">
             <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-crimson" /> {p}
           </div>

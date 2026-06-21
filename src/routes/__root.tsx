@@ -85,7 +85,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Second Sync — Nepal's Smart Second-Hand Marketplace" },
-      { name: "description", content: "Buy and sell pre-loved goods across Nepal. Trusted sellers, fair prices, eSewa/Khalti support — from Kathmandu to Karnali." },
+      { name: "description", content: "Buy and sell pre-loved goods across Nepal. Trusted sellers, fair prices, Khalti-secured payments — from Kathmandu to Karnali." },
       { name: "author", content: "Second Sync" },
       { property: "og:title", content: "Second Sync — Nepal's Smart Second-Hand Marketplace" },
       { property: "og:description", content: "Buy and sell pre-loved goods across Nepal." },

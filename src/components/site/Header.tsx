@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Menu, Search, X, User, LogOut, ShieldCheck, ChevronDown } from "lucide-react";
+import { Menu, Search, X, User, LogOut, ShieldCheck, ChevronDown, MapPin } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { Logo } from "@/components/site/Logo";
 import { useAuth } from "@/lib/auth-context";
@@ -13,12 +13,44 @@ const nav = [
   { to: "/contact", label: "Contact", np: "सम्पर्क" },
 ] as const;
 
+function useLocationLabel() {
+  const [label, setLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+            { headers: { "Accept-Language": "en" } }
+          );
+          const data = await res.json();
+          const addr = data.address ?? {};
+          const place =
+            addr.suburb ?? addr.neighbourhood ?? addr.city_district ??
+            addr.town ?? addr.village ?? addr.city ?? addr.county ?? null;
+          const city = addr.city ?? addr.town ?? addr.state_district ?? null;
+          if (place) {
+            setLabel(city && city !== place ? `${place}, ${city}` : place);
+          }
+        } catch {}
+      },
+      () => {} // permission denied — keep default
+    );
+  }, []);
+
+  return label;
+}
+
 export function Header() {
   const [open, setOpen] = useState(false);
   const [dropOpen, setDropOpen] = useState(false);
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
   const dropRef = useRef<HTMLDivElement>(null);
+  const locationLabel = useLocationLabel();
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -50,8 +82,15 @@ export function Header() {
           <Logo size={40} className="transition-transform group-hover:scale-105" />
           <div className="leading-tight">
             <div className="font-display text-lg font-bold text-ink tracking-tight">SecondSync</div>
-            <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
-              काठमाडौं उपत्यका · Valley Market
+            <div className="flex items-center gap-1 text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+              {locationLabel ? (
+                <>
+                  <MapPin className="h-2.5 w-2.5 text-crimson flex-shrink-0" />
+                  <span className="truncate max-w-[120px]">{locationLabel}</span>
+                </>
+              ) : (
+                "काठमाडौं उपत्यका · Valley Market"
+              )}
             </div>
           </div>
         </Link>
@@ -63,8 +102,8 @@ export function Header() {
               key={n.to}
               to={n.to}
               activeOptions={{ exact: n.to === "/" }}
-              className="text-sm font-medium text-ink/80 transition-colors hover:text-crimson"
-              activeProps={{ className: "text-crimson" }}
+              className="relative text-sm font-medium text-ink/80 transition-colors hover:text-crimson after:absolute after:-bottom-0.5 after:left-0 after:h-[2px] after:w-0 after:bg-crimson after:transition-all after:duration-250 hover:after:w-full"
+              activeProps={{ className: "text-crimson after:w-full" }}
             >
               {n.label}
             </Link>
@@ -102,7 +141,7 @@ export function Header() {
               </button>
 
               {dropOpen && (
-                <div className="absolute right-0 top-full mt-2 w-52 overflow-hidden rounded-2xl border border-border bg-card shadow-elegant">
+                <div className="absolute right-0 top-full mt-2 w-52 overflow-hidden rounded-2xl border border-border bg-card shadow-elegant animate-scale-pop origin-top-right">
                   <div className="border-b border-border px-4 py-3">
                     <div className="font-semibold text-ink text-sm">{displayName}</div>
                     <div className="text-xs text-muted-foreground truncate">{user.email}</div>
@@ -176,7 +215,7 @@ export function Header() {
 
       {/* Mobile menu */}
       {open && (
-        <div className="border-t border-border bg-paper lg:hidden">
+        <div className="border-t border-border bg-paper lg:hidden animate-slide-down">
           <div className="flex flex-col p-4">
             {nav.map((n) => (
               <Link

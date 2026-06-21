@@ -8,52 +8,60 @@ export function Logo({ size = 40, className }: { size?: number; className?: stri
       xmlns="http://www.w3.org/2000/svg"
       className={className}
     >
-      {/* Background */}
-      <rect width="48" height="48" rx="11" fill="#4a0014" />
+      <defs>
+        <radialGradient id="ss-bg" cx="32%" cy="22%" r="75%">
+          <stop offset="0%" stopColor="#6a001e" />
+          <stop offset="100%" stopColor="#19000a" />
+        </radialGradient>
+        <clipPath id="ss-clip">
+          <rect width="48" height="48" rx="11" />
+        </clipPath>
+      </defs>
 
-      {/* Subtle inner glow */}
-      <circle cx="24" cy="24" r="13" fill="rgba(212,168,87,0.07)" />
+      {/* Badge */}
+      <rect width="48" height="48" rx="11" fill="url(#ss-bg)" />
 
-      {/* Top sync arc — bright gold */}
+      {/* Top-left gloss */}
+      <ellipse
+        cx="15" cy="10" rx="14" ry="7"
+        fill="rgba(255,255,255,0.055)"
+        clipPath="url(#ss-clip)"
+      />
+
+      {/* Hairline framing ring */}
+      <circle cx="24" cy="24" r="14" stroke="#d4a857" strokeWidth="0.5" strokeOpacity="0.22" />
+
+      {/*
+        ── Upper C-arrow ────────────────────────────────────────────
+        Circle center (24, 20), radius 9.5.
+        Sweeps CLOCKWISE from left (14.5, 20) → via top (24, 10.5) → to right (33.5, 20).
+        At the right end the clockwise tangent points DOWNWARD → arrowhead faces down.
+      */}
       <path
-        d="M8 24 A16 16 0 0 1 40 24"
+        d="M 14.5 20 A 9.5 9.5 0 0 1 33.5 20"
         stroke="#d4a857"
-        strokeWidth="3.2"
+        strokeWidth="4.5"
         strokeLinecap="round"
+        fill="none"
       />
-      {/* Arrowhead at top arc end (40,24) — pointing downward (clockwise) */}
-      <path
-        d="M36.5 17.5 L40 24 L34 24.8"
-        stroke="#d4a857"
-        strokeWidth="2.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      {/* Arrowhead: tip (33.5,26), wings (29.5,17) & (37.5,17) */}
+      <polygon points="33.5,26 29.5,17 37.5,17" fill="#d4a857" />
 
-      {/* Bottom sync arc — deeper gold */}
+      {/*
+        ── Lower C-arrow ────────────────────────────────────────────
+        Circle center (24, 28), radius 9.5.
+        Sweeps CLOCKWISE from right (33.5, 28) → via bottom (24, 37.5) → to left (14.5, 28).
+        At the left end the clockwise tangent points UPWARD → arrowhead faces up.
+      */}
       <path
-        d="M40 24 A16 16 0 0 1 8 24"
-        stroke="#c49040"
-        strokeWidth="3.2"
+        d="M 33.5 28 A 9.5 9.5 0 0 1 14.5 28"
+        stroke="#bf7c22"
+        strokeWidth="4.5"
         strokeLinecap="round"
+        fill="none"
       />
-      {/* Arrowhead at bottom arc end (8,24) — pointing upward (clockwise) */}
-      <path
-        d="M11.5 30.5 L8 24 L14 23.2"
-        stroke="#c49040"
-        strokeWidth="2.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-
-      {/* Valley mountain silhouette inside the sync circle */}
-      <path
-        d="M14 35 L21 24 L24.5 29 L28.5 22 L34 35"
-        stroke="rgba(245,240,232,0.52)"
-        strokeWidth="1.9"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      {/* Arrowhead: tip (14.5,22), wings (11,31) & (18,31) */}
+      <polygon points="14.5,22 11,31 18,31" fill="#bf7c22" />
     </svg>
   );
 }

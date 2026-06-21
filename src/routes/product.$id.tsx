@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import {
   ArrowLeft, MapPin, Clock, ChevronLeft, ChevronRight,
   CheckCircle2, Trash2, Tag, ShoppingBag, Package,
-  Loader2, Shield, Truck, X,
+  Loader2, Shield, Truck, X, MessageCircle, Send,
   BadgeCheck, AlertCircle, TrendingUp, Zap,
 } from "lucide-react";
 import { formatNpr, timeAgo, type Product } from "@/lib/products";
@@ -12,7 +12,9 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { recordView, getSimilarListings, getPersonalizedRecommendations } from "@/lib/recommendations";
 import { DamageAnalyzer } from "@/components/site/DamageAnalyzer";
-import { esewaSign, esewaSimulateDev } from "@/lib/payment.server";
+import { khaltiInitiate, notifySellerMessage } from "@/lib/payment.server";
+import khaltiPng from "../../hero/khalti.png";
+import pathaoPng from "../../hero/pathao.png";
 
 export const Route = createFileRoute("/product/$id")({
   head: () => ({ meta: [{ title: "Listing — Second Sync" }] }),
@@ -65,50 +67,30 @@ function DamageAnalyzerFromUrl({ imageUrl }: { imageUrl: string }) {
 /* ─────────────────────────────────────────────────────────────── */
 /* Brand Logos                                                      */
 /* ─────────────────────────────────────────────────────────────── */
-function EsewaLogo({ compact = false }: { compact?: boolean }) {
+function KhaltiLogo({ compact = false }: { compact?: boolean }) {
   return (
-    <div
+    <img
+      src={khaltiPng}
+      alt="Khalti"
       style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        gap: "3px",
-        width: compact ? "48px" : "64px",
         height: compact ? "26px" : "34px",
-        borderRadius: "8px",
-        background: "linear-gradient(135deg, #6dcf3e 0%, #4aab1a 100%)",
-        padding: "0 8px",
-        boxShadow: "0 2px 8px rgba(96,187,70,0.35)",
+        width: "auto",
+        objectFit: "contain",
+        borderRadius: "6px",
+        flexShrink: 0,
       }}
-    >
-      <span style={{ color: "white", fontSize: compact ? "15px" : "20px", fontWeight: 900, lineHeight: 1, fontFamily: "Arial, sans-serif" }}>e</span>
-      <span style={{ color: "white", fontSize: compact ? "9px" : "11px", fontWeight: 700, letterSpacing: "-0.2px", fontFamily: "Arial, sans-serif" }}>Sewa</span>
-    </div>
+    />
   );
 }
 
 
 function PathaoLogo({ size = 40 }: { size?: number }) {
   return (
-    <div
-      style={{
-        display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "2px",
-        width: size, height: size, borderRadius: "10px",
-        background: "linear-gradient(135deg, #f04040 0%, #c0251a 100%)",
-        boxShadow: "0 2px 8px rgba(232,59,63,0.4)",
-      }}
-    >
-      {/* Motorbike icon */}
-      <svg viewBox="0 0 20 14" fill="none" style={{ width: "18px", height: "13px" }}>
-        {/* Rear wheel */}
-        <circle cx="3.5" cy="10.5" r="3" stroke="white" strokeWidth="1.6"/>
-        {/* Front wheel */}
-        <circle cx="16.5" cy="10.5" r="3" stroke="white" strokeWidth="1.6"/>
-        {/* Body */}
-        <path d="M3.5 10.5 L6 7 L9.5 7 L11.5 4 L15 4 L16.5 10.5 M9.5 7 L11 10.5" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-        {/* Rider handlebar */}
-        <path d="M14.5 4 L16 2.5" stroke="white" strokeWidth="1.3" strokeLinecap="round"/>
-      </svg>
-      <span style={{ color: "white", fontSize: "8px", fontWeight: 800, letterSpacing: "0.3px", fontFamily: "Arial, sans-serif", lineHeight: 1 }}>PATHAO</span>
-    </div>
+    <img
+      src={pathaoPng}
+      alt="Pathao"
+      style={{ width: size, height: size, objectFit: "contain", borderRadius: "10px", flexShrink: 0 }}
+    />
   );
 }
 
@@ -127,10 +109,48 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
   const [buyerPhone, setBuyerPhone] = useState(profile?.phone ?? "");
   const [address, setAddress]     = useState("");
   const [delivery, setDelivery]   = useState<"pickup" | "pathao" | "bus">("pickup");
-  const [payment] = useState<"esewa">("esewa");
+  const [payment] = useState<"khalti">("khalti");
   const [note, setNote]           = useState("");
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState("");
+  const [detecting, setDetecting] = useState(false);
+  const [geoErr, setGeoErr]       = useState(false);
+
+  async function detectAddress() {
+    if (!navigator.geolocation) { setGeoErr(true); return; }
+    setDetecting(true);
+    setGeoErr(false);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+            { headers: { "Accept-Language": "en" } }
+          );
+          const data = await res.json();
+          const a = data.address ?? {};
+          const parts = [
+            a.house_number,
+            a.road || a.pedestrian || a.footway,
+            a.suburb || a.neighbourhood || a.city_district,
+            a.city || a.town || a.village,
+            a.state_district || a.county,
+          ].filter(Boolean) as string[];
+          if (parts.length) setAddress(parts.join(", "));
+        } catch { setGeoErr(true); }
+        setDetecting(false);
+      },
+      () => { setGeoErr(true); setDetecting(false); },
+      { timeout: 8000 }
+    );
+  }
+
+  // Auto-detect when switching from pickup to a delivery method
+  useEffect(() => {
+    if (delivery !== "pickup" && !address) detectAddress();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [delivery]);
 
   const deliveryCost = delivery === "pickup" ? 0 : delivery === "pathao" ? 200 : 150;
   const total        = product.price + deliveryCost;
@@ -182,63 +202,26 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
       return;
     }
 
-    // ── eSewa ──────────────────────────────────────────────────────
-    if (payment === "esewa") {
+    // ── Khalti ────────────────────────────────────────────────────
+    if (payment === "khalti") {
       try {
-        const origin    = window.location.origin;
-        const isLocalDev = origin.includes("localhost") || origin.includes("127.0.0.1");
-
-        if (isLocalDev) {
-          // eSewa RC sandbox is unreliable locally — use a signed dev
-          // simulator that goes through the real verify/confirm pipeline.
-          const { encodedData } = await esewaSimulateDev({
-            data: { orderId, totalAmount: total },
-          });
-          window.location.href = `${origin}/payment-success?data=${encodedData}`;
-          return;
-        }
-
-        // Production: real eSewa form POST
-        const fields = await esewaSign({
+        const origin = import.meta.env.VITE_PAYMENT_ORIGIN || window.location.origin;
+        const { paymentUrl } = await khaltiInitiate({
           data: {
-            transactionUuid: orderId,
-            itemAmount:      product.price,
-            deliveryCharge:  deliveryCost,
-            totalAmount:     total,
+            orderId,
+            totalAmount: total,
+            productName: product.title,
+            buyerName,
+            buyerEmail:  user.email ?? "",
+            buyerPhone,
+            returnUrl:   `${origin}/payment-success`,
+            websiteUrl:  origin,
           },
         });
-
-        const form = document.createElement("form");
-        form.method = "POST";
-        form.action = fields.action;
-
-        const params: Record<string, string> = {
-          amount:                  fields.amount,
-          tax_amount:              fields.tax_amount,
-          total_amount:            fields.total_amount,
-          transaction_uuid:        fields.transaction_uuid,
-          product_code:            fields.product_code,
-          product_service_charge:  fields.product_service_charge,
-          product_delivery_charge: fields.product_delivery_charge,
-          success_url: `${origin}/payment-success`,
-          failure_url: `${origin}/payment-cancel?order_id=${orderId}`,
-          signed_field_names: fields.signed_field_names,
-          signature:          fields.signature,
-        };
-
-        for (const [k, v] of Object.entries(params)) {
-          const input = document.createElement("input");
-          input.type  = "hidden";
-          input.name  = k;
-          input.value = v;
-          form.appendChild(input);
-        }
-
-        document.body.appendChild(form);
-        form.submit();
+        window.location.href = paymentUrl;
       } catch (err: any) {
         setLoading(false);
-        setError(err?.message ?? "eSewa payment failed. Please try again.");
+        setError(err?.message ?? "Khalti payment failed. Please try again.");
       }
       return;
     }
@@ -361,10 +344,32 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
           </div>
           {delivery !== "pickup" && (
             <div className="mt-2">
-              <label className="text-xs font-semibold text-ink">Delivery address *</label>
-              <input value={address} onChange={e => setAddress(e.target.value)}
-                placeholder="e.g. Kupondole, Lalitpur"
-                className="mt-1 w-full rounded-xl border border-border bg-paper px-3 py-2.5 text-sm outline-none focus:border-crimson" />
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-ink">Delivery address *</label>
+                <button type="button" onClick={detectAddress} disabled={detecting}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-crimson hover:underline disabled:opacity-50 transition-opacity">
+                  {detecting
+                    ? <><Loader2 className="h-3 w-3 animate-spin" /> Detecting…</>
+                    : <><MapPin className="h-3 w-3" /> Use my location</>}
+                </button>
+              </div>
+              <div className="relative">
+                <input value={address} onChange={e => { setAddress(e.target.value); setGeoErr(false); }}
+                  placeholder="Detecting your location…"
+                  className={`w-full rounded-xl border bg-paper px-3 py-2.5 pr-8 text-sm outline-none transition-colors ${detecting ? "border-crimson/40 text-muted-foreground" : "border-border focus:border-crimson"}`}
+                />
+                {detecting && (
+                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-crimson" />
+                )}
+                {!detecting && address && (
+                  <MapPin className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-green-500" />
+                )}
+              </div>
+              {geoErr && (
+                <p className="mt-1 text-[11px] text-amber-600">
+                  Location access denied — please type your address manually.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -372,15 +377,11 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         {/* Payment */}
         <div>
           <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Payment Method</p>
-          <div className="flex items-center gap-3 rounded-xl border border-green-500 bg-green-50 ring-1 ring-green-200 p-3">
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:"42px", height:"42px", borderRadius:"10px", background:"linear-gradient(135deg,#6dcf3e,#4aab1a)", boxShadow:"0 2px 8px rgba(96,187,70,0.4)", flexShrink:0 }}>
-              <span style={{ color:"white", fontWeight:900, fontFamily:"Arial,sans-serif", lineHeight:1 }}>
-                <span style={{ fontSize:"18px" }}>e</span><span style={{ fontSize:"11px", fontWeight:700 }}>S</span>
-              </span>
-            </div>
+          <div className="flex items-center gap-3 rounded-xl border border-purple-400 bg-purple-50 ring-1 ring-purple-200 p-3">
+            <img src={khaltiPng} alt="Khalti" className="h-10 w-auto rounded-lg flex-shrink-0" style={{ objectFit:"contain" }} />
             <div>
-              <p className="font-bold text-sm text-green-700">eSewa</p>
-              <p className="text-xs text-green-600 flex items-center gap-1"><Shield className="h-3 w-3" /> Secured digital payment</p>
+              <p className="font-bold text-sm text-purple-700">Khalti</p>
+              <p className="text-xs text-purple-600 flex items-center gap-1"><Shield className="h-3 w-3" /> Secured digital payment</p>
             </div>
           </div>
         </div>
@@ -415,11 +416,11 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
         )}
 
         <button onClick={placeOrder} disabled={loading}
-          className="w-full flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold text-paper shadow-card transition-all hover:scale-[1.02] disabled:opacity-60 disabled:scale-100 bg-[#4aab1a] hover:shadow-[0_6px_24px_rgba(96,187,70,0.45)]">
+          className="w-full flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold text-paper shadow-card transition-all hover:scale-[1.02] disabled:opacity-60 disabled:scale-100 bg-[#5C2D91] hover:shadow-[0_6px_24px_rgba(92,45,145,0.45)]">
           {loading ? (
-            <><Loader2 className="h-4 w-4 animate-spin" /> Redirecting to eSewa…</>
+            <><Loader2 className="h-4 w-4 animate-spin" /> Processing…</>
           ) : (
-            <><EsewaLogo compact /><span>Pay with eSewa · Rs {formatNpr(total)}</span></>
+            <><KhaltiLogo compact /><span>Pay with Khalti · Rs {formatNpr(total)}</span></>
           )}
         </button>
 
@@ -427,6 +428,101 @@ function OrderPanel({ product, onCancel }: { product: Product; onCancel: () => v
           🔒 Your order is sent securely to the seller
         </p>
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Message Seller Panel                                            */
+/* ─────────────────────────────────────────────────────────────── */
+function MessageSeller({ product }: { product: Product }) {
+  const { user, profile } = useAuth();
+  const navigate = useNavigate();
+  const [open, setOpen]       = useState(false);
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent]       = useState(false);
+  const [err, setErr]         = useState("");
+
+  async function send() {
+    if (!user) { navigate({ to: "/login" }); return; }
+    if (!message.trim()) return;
+    setSending(true);
+    setErr("");
+    try {
+      await notifySellerMessage({
+        data: {
+          sellerId:     product.seller_id,
+          buyerName:    profile?.full_name || user.email?.split("@")[0] || "Buyer",
+          buyerEmail:   user.email ?? "",
+          listingTitle: product.title,
+          message:      message.trim(),
+        },
+      });
+      setSent(true);
+      setMessage("");
+    } catch (e: any) {
+      setErr("Could not send message. Please try again later.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => { if (!user) navigate({ to: "/login" }); else setOpen(true); }}
+        className="w-full flex items-center justify-center gap-2 rounded-full border border-border bg-card py-3 text-sm font-semibold text-ink hover:border-crimson hover:text-crimson transition-colors"
+      >
+        <MessageCircle className="h-4 w-4" /> Message Seller
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MessageCircle className="h-4 w-4 text-crimson" />
+          <span className="text-sm font-bold text-ink">Message Seller</span>
+        </div>
+        <button onClick={() => { setOpen(false); setSent(false); setErr(""); }}
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary hover:bg-border transition-colors">
+          <X className="h-3 w-3 text-ink" />
+        </button>
+      </div>
+
+      {sent ? (
+        <div className="flex flex-col items-center gap-2 py-3 text-center">
+          <CheckCircle2 className="h-8 w-8 text-green-500" />
+          <p className="text-sm font-semibold text-ink">Message sent!</p>
+          <p className="text-xs text-muted-foreground">
+            The seller will reply to your email <strong>{user?.email}</strong>.
+          </p>
+          <button onClick={() => { setSent(false); setOpen(false); }}
+            className="mt-1 text-xs text-crimson hover:underline">Close</button>
+        </div>
+      ) : (
+        <>
+          <textarea
+            value={message}
+            onChange={e => { setMessage(e.target.value); setErr(""); }}
+            rows={3}
+            placeholder={`Hi, I'm interested in "${product.title}". Is it still available?`}
+            className="w-full resize-none rounded-xl border border-border bg-paper px-3 py-2.5 text-sm outline-none focus:border-crimson"
+          />
+          {err && <p className="text-xs text-red-500">{err}</p>}
+          <button
+            onClick={send}
+            disabled={sending || !message.trim()}
+            className="w-full flex items-center justify-center gap-2 rounded-full bg-crimson py-2.5 text-sm font-semibold text-paper hover:opacity-90 disabled:opacity-50 transition-opacity"
+          >
+            {sending
+              ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</>
+              : <><Send className="h-4 w-4" /> Send Message</>}
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -688,6 +784,7 @@ function ProductPage() {
                   >
                     <ShoppingBag className="h-5 w-5" /> Buy Now — Rs {formatNpr(product.price)}
                   </button>
+                  <MessageSeller product={product} />
                   <p className="text-center text-xs text-muted-foreground">
                     Free to browse · No platform fee for buyers
                   </p>
