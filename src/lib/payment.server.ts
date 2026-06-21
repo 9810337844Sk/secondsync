@@ -344,65 +344,77 @@ export const notifyContactMessage = createServerFn({ method: "POST" })
     message: z.string(),
   }))
   .handler(async ({ data }) => {
-    // Save to DB using service-role key (bypasses RLS) if available, else anon key
-    const dbKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? SUPABASE_ANON_KEY;
-    const db = createClient(SUPABASE_URL, dbKey);
-    await db.from("contact_messages").insert({
-      name:    data.name,
-      email:   data.email,
-      subject: data.subject,
-      message: data.message,
-    }).then(({ error }) => {
+    // Save to DB — best-effort, never blocks the response
+    try {
+      const dbKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? SUPABASE_ANON_KEY;
+      const db = createClient(SUPABASE_URL, dbKey);
+      const { error } = await db.from("contact_messages").insert({
+        name:    data.name,
+        email:   data.email,
+        subject: data.subject,
+        message: data.message,
+      });
       if (error) console.error("[contact] DB insert failed:", error.message);
-    });
+    } catch (dbErr: any) {
+      console.error("[contact] DB insert threw:", dbErr?.message ?? dbErr);
+    }
 
-    const transport = makeTransport();
     const safeMsg = data.message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-    // Email 1 — admin notification
-    await transport.sendMail({
-      from:    FROM,
-      to:      "teamkalpantrix@gmail.com",
-      replyTo: data.email,
-      subject: `[Contact] ${data.subject}`,
-      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
-        ${emailHeader("New contact message", `From ${data.name} via Second Sync`)}
-        <div style="border:1px solid #e5e5e5;border-top:none;padding:28px 32px;border-radius:0 0 12px 12px">
-          ${orderTable([
-            ["From",    data.name],
-            ["Email",   `<a href="mailto:${data.email}" style="color:#c0392b">${data.email}</a>`],
-            ["Subject", data.subject],
-          ])}
-          <div style="background:#f9f9f9;border-left:4px solid #c0392b;padding:16px 20px;border-radius:6px;white-space:pre-wrap;font-size:14px;line-height:1.6">
-            ${safeMsg}
+    // Email 1 — admin notification (best-effort)
+    try {
+      const transport = makeTransport();
+      await transport.sendMail({
+        from:    FROM,
+        to:      "teamkalpantrix@gmail.com",
+        replyTo: data.email,
+        subject: `[Contact] ${data.subject}`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
+          ${emailHeader("New contact message", `From ${data.name} via Second Sync`)}
+          <div style="border:1px solid #e5e5e5;border-top:none;padding:28px 32px;border-radius:0 0 12px 12px">
+            ${orderTable([
+              ["From",    data.name],
+              ["Email",   `<a href="mailto:${data.email}" style="color:#c0392b">${data.email}</a>`],
+              ["Subject", data.subject],
+            ])}
+            <div style="background:#f9f9f9;border-left:4px solid #c0392b;padding:16px 20px;border-radius:6px;white-space:pre-wrap;font-size:14px;line-height:1.6">
+              ${safeMsg}
+            </div>
+            <p style="margin:20px 0 0;font-size:12px;color:#888">
+              Reply directly to this email — it will go to ${data.email}
+            </p>
           </div>
-          <p style="margin:20px 0 0;font-size:12px;color:#888">
-            Reply directly to this email — it will go to ${data.email}
-          </p>
-        </div>
-      </div>`,
-    });
+        </div>`,
+      });
+    } catch (e: any) {
+      console.error("[contact] admin email failed:", e?.message ?? e);
+    }
 
-    // Email 2 — confirmation to the sender
-    await transport.sendMail({
-      from:    FROM,
-      to:      data.email,
-      subject: `We received your message — Second Sync`,
-      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
-        ${emailHeader("Thanks for reaching out!", `Hi ${data.name}, we've got your message`)}
-        <div style="border:1px solid #e5e5e5;border-top:none;padding:28px 32px;border-radius:0 0 12px 12px">
-          <p style="margin:0 0 16px;font-size:15px;line-height:1.6">
-            We received your message and will get back to you within <strong>24 hours</strong>.
-          </p>
-          ${orderTable([["Subject", data.subject]])}
-          <div style="background:#f9f9f9;border-left:4px solid #c0392b;padding:16px 20px;border-radius:6px;white-space:pre-wrap;font-size:14px;line-height:1.6;color:#555">
-            ${safeMsg}
+    // Email 2 — confirmation to the sender (best-effort)
+    try {
+      const transport = makeTransport();
+      await transport.sendMail({
+        from:    FROM,
+        to:      data.email,
+        subject: `We received your message — Second Sync`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
+          ${emailHeader("Thanks for reaching out!", `Hi ${data.name}, we've got your message`)}
+          <div style="border:1px solid #e5e5e5;border-top:none;padding:28px 32px;border-radius:0 0 12px 12px">
+            <p style="margin:0 0 16px;font-size:15px;line-height:1.6">
+              We received your message and will get back to you within <strong>24 hours</strong>.
+            </p>
+            ${orderTable([["Subject", data.subject]])}
+            <div style="background:#f9f9f9;border-left:4px solid #c0392b;padding:16px 20px;border-radius:6px;white-space:pre-wrap;font-size:14px;line-height:1.6;color:#555">
+              ${safeMsg}
+            </div>
+            <p style="margin:20px 0 0;font-size:13px;color:#888">
+              If you didn't send this message, you can safely ignore this email.
+            </p>
+            ${emailFooter()}
           </div>
-          <p style="margin:20px 0 0;font-size:13px;color:#888">
-            If you didn't send this message, you can safely ignore this email.
-          </p>
-          ${emailFooter()}
-        </div>
-      </div>`,
-    });
+        </div>`,
+      });
+    } catch (e: any) {
+      console.error("[contact] sender email failed:", e?.message ?? e);
+    }
   });
